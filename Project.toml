@@ -1,6 +1,18 @@
 name = "UCLCHEM Surrogate"
 authors = ["Jonathan Balasingham"]
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Catalyst = "479239e8-5488-4da2-87a7-35f2df7eef83"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
+ReservoirComputing = "7c2d2b1e-3dd4-11ea-355a-8f6a8116e294"
+Sundials = "c3572dad-4567-51f8-b174-8c6c989267f4"
+Surrogates = "6fc51010-71bc-11e9-0e15-a3fcc6593c49"
+
 [compat]
 julia = "1.6.1"
-[deps]
-DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
