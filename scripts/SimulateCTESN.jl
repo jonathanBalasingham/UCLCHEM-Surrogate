@@ -22,7 +22,7 @@ degree = 500
 activation = tanh
 alpha = .7
 sigma = 0.5
-nla_type = NLAT1()
+nla_type = NLADefault()
 extended_states = false
 beta = 0.0005
 

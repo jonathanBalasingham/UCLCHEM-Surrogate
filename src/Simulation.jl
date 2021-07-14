@@ -48,7 +48,6 @@ function create_esn(settings::ESNSettings, train_data::T) where {T <: Matrix{Flo
         W = readdlm(settings.W_path, ',', header=false)
         W_in = readdlm(settings.W_in_path, ',', header=false)
 
-        
         ESN(W,
             train_data,
             W_in,
@@ -75,7 +74,7 @@ function simulate(s::Simulation)
         esn = create_esn(s.settings.esn_settings, data)
         W_out = ESNtrain(esn, s.settings.esn_settings.beta)
         # train -> predict the fit
-        prediction = ESNfitted(esn, W_out)
+        prediction = ESNfitted(esn, W_out, autonomous=true)
         # generate a score for each set of data
         if size(prediction, 1) == 1
             prediction = prediction[begin,:]
@@ -98,7 +97,7 @@ staticdir(x) = datadir("sims", "Static", x)
 function makesim(alpha,
                 sigma,
                 beta,
-                type,
+                type;
                 datastore=adaptivedir(""),
                 transform=x -> log10.(x .+ 1.),
                 transform_alias="log10",
@@ -156,7 +155,7 @@ function makesim(reservoir_size,
                  sigma,
                  beta,
                  type,
-                 savepath,
+                 savepath;
                  datastore=adaptivedir(""),
                  transform=x->log10.(x .+ 1),
                  transform_alias="log10",

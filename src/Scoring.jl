@@ -24,8 +24,9 @@ function roc(truth::T, pred::T) where {T <: Vector}
 end
 
 function perc_mae(truth::T, pred::T) where {T <: Matrix}
-    abs.(pred .- truth) ./ truth |>
-        x -> sum(eachrow(x)) |>
+    weight = 1 / size(truth, 1)
+    abs.(pred .- truth) |>
+        x -> sum(eachrow(x)) .* weight |>
         x -> mean(x)
 end
 

@@ -1,11 +1,11 @@
 include(srcdir("Simulation.jl"))
-using Surrogates, DataStructures, JLD2
+using Surrogates, DataStructures, JLD2, DataFrames
 
 hyperparameter_lower_bound = [1000, 500, 0.1, 0.0001, 0.000000000001]
 hyperparameter_upper_bound = [1000, 500, .99, 1.0, 0.1]
 
 hpnames = ["reservoir_size","degree","alpha", "sigma", "beta", "type", "savepath"]
-hp_set = sample(1, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
+hp_set = sample(1000, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
 
 
 for hp in hp_set
