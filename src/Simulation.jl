@@ -91,13 +91,46 @@ function simulate(s::Simulation)
     mean_scores
 end
 
+function simulate(s::Simulation, datasets::Array{Matrix})
+    # create the esn
+    # run through all the training train_data
+    scores = Array{Float64, 1}[]
+    for data in datasets
+        current_score = Float64[]
+        data = data |> s.training_data_transform
+        if s.type == "species"
+            data = data[2:end, :]
+        elseif s.type == "time"
+            data = data[1:1, :]
+        end
+        esn = create_esn(s.settings.esn_settings, data)
+        W_out = ESNtrain(esn, s.settings.esn_settings.beta)
+        # train -> predict the fit
+        prediction = ESNfitted(esn, W_out, autonomous=true)
+        # generate a score for each set of data
+        if size(prediction, 1) == 1
+            prediction = prediction[begin,:]
+            data = data[begin,:]
+        end
+        mae_score = mae(data, prediction)
+        roc_score = roc(data, prediction)
+        pmae_score = perc_mae(data, prediction)
+        proc_score = perc_roc(data, prediction)
+        push!(scores, [mae_score, pmae_score, roc_score, proc_score])
+    end
+    score_matrix = hcat(scores...)
+    mean_scores = mean(score_matrix, dims=2)
+    mean_scores
+end
+
 adaptivedir(x) = datadir("sims", "Adaptive", x)
 staticdir(x) = datadir("sims", "Static", x)
 
 function makesim(alpha,
                 sigma,
                 beta,
-                type;
+                type,
+                preload_data=false;
                 datastore=adaptivedir(""),
                 transform=x -> log10.(x .+ 1.),
                 transform_alias="log10",
@@ -107,20 +140,6 @@ function makesim(alpha,
                 extended_states = false,
                 W_path=projectdir("_research", "W_default.csv"),
                 W_in_path=projectdir("_research", "W_in_default.csv"))
-
-    #=
-    reservoir_size::Integer
-    radius::Float64
-    degree::Integer
-    activation::Function
-    alpha::Float64
-    sigma::Float64
-    nla_type
-    extended_states::Bool
-    beta::Float64
-    W_path::String
-    W_in_path::String
-    =#
 
     esns = ESNSettings(
         nothing,
@@ -135,16 +154,15 @@ function makesim(alpha,
         W_path,
         W_in_path
     )
-    #=
-    type::String
-    training_data_store::String
-    training_data_transform::Function
-    transform_alias::String
-    training_data_transform_back::Function
-    settings::RolledSimulationSettings
-    =#
+
     s = Simulation(type, datastore, transform, transform_alias, transform_back, RolledSimulationSettings(esns, ChemistrySettings()))
-    return simulate(s)
+
+    if preload_data
+        datasets = [readdlm(fp,',',header=true) for fp in readdir(datastore, join=true)]
+        return simulate(s, datasets)
+    else
+        return simulate(s)
+    end
 end
 
 
@@ -155,7 +173,8 @@ function makesim(reservoir_size,
                  sigma,
                  beta,
                  type,
-                 savepath;
+                 savepath,
+                 preload_data=false;
                  datastore=adaptivedir(""),
                  transform=x->log10.(x .+ 1),
                  transform_alias="log10",
@@ -221,5 +240,10 @@ function makesim(reservoir_size,
     
 
     s = Simulation(type, datastore, transform, transform_alias, transform_back, RolledSimulationSettings(esns, ChemistrySettings()))
-    return simulate(s)
+    if preload_data
+        datasets = [readdlm(fp,',',header=true) for fp in readdir(datastore, join=true)]
+        return simulate(s, datasets)
+    else
+        return simulate(s)
+    end
 end
