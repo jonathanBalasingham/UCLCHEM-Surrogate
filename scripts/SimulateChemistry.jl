@@ -16,22 +16,30 @@ parameter_samples = sample(1000, rates_set_lower_bound, rates_set_upper_bound, S
 
 write_path(x) = datadir("sims", "Adaptive_unstable", x)
 
-for parameter_sample in parameter_samples[1:end]
-    pa = Parameters(parameter_sample...)
-    p = formulate_all(rfp, icfp, pa)
-    try
-        @time sol = solve(p, solver=CVODE_BDF)
-        train_subset = vcat(sol.t', hcat(sol.u...))
-        filename = "CVODE_adaptive" * reduce(*, parameter_sample .|> x -> "_" * string(x)) * ".csv"
-        open(write_path(filename), "w") do io
-            writedlm(io, train_subset, ',')
+
+function sim(parameter_samples)
+    i = 1
+    for parameter_sample in parameter_samples
+        pa = Parameters(parameter_sample...)
+        p = formulate_all(rfp, icfp, pa)
+        try
+            @time sol = solve(p, solver=CVODE_BDF)
+            train_subset = vcat(sol.t', hcat(sol.u...))
+            filename = "CVODE_adaptive" * reduce(*, parameter_sample .|> x -> "_" * string(x)) * ".csv"
+            open(write_path(filename), "w") do io
+                writedlm(io, train_subset, ',')
+            end
+        catch e
+            @info "errored on $i : $parameter_sample"
         end
-    catch e
-        @info "errored on $parameter_sample"
-        continue
+        i += 1
     end
 end
 
+sim(parameter_samples)
+
+
+#=
 write_path(x) = datadir("sims", "Static", x)
 saveat = collect(10 .^ (-9:.01:log10(tspan[end])+.1))
 
@@ -45,4 +53,4 @@ for parameter_sample in parameter_samples
         writedlm(io, train_subset, ',')
     end
 end
-
+=#
