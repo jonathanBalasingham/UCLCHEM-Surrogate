@@ -5,7 +5,7 @@ hyperparameter_lower_bound = [1000, 500, 0.3, 0.5, 3.36006e-13]
 hyperparameter_upper_bound = [1000, 500, .99, .5, 3.96916e-10]
 
 hpnames = ["reservoir_size","degree","alpha", "sigma", "beta", "type", "savepath"]
-hp_set = sample(10, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
+hp_set = sample(30, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
 
 
 for hp in hp_set

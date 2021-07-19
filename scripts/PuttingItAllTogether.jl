@@ -16,12 +16,13 @@ function create_surrogate(time_alpha::Float64,
                           species_beta::Float64;
                           activation=tanh,
                           nla_type=NLADefault(),
-                          extended_states=false,
+                          extended_states=true,
                           W_in_time=readdlm(projectdir("_research", "W_in_time_1.csv"), ',', header=true),
                           W_in_species=readdlm(projectdir("_research", "W_in_species_1.csv"), ',', header=true),
                           W_time=readdlm(projectdir("_research", "W_time_1.csv"), ',', header=true),
                           W_species=readdlm(projectdir("_research", "W_species_1.csv"), ',', header=true),
                           datapath=datadir("sims", "Adaptive"),
+                          transform=x->log10.(x .+ 10e-30),
                           rates_set_lower_bound = [1e-17, 0.5, 10, 0.5, 2., 1e2],
                           rates_set_upper_bound = [1., 0.5, 100, 1.5, 10., 1e4])
 
@@ -33,8 +34,8 @@ function create_surrogate(time_alpha::Float64,
         params = _extract_parameters(basename(path))
         push!(parameter_set, params)
         data = readdlm(path, ',', header=true)
-        time_data = data[1:1, :]
-        species_data = data[2:end, :]
+        time_data = data[1:1, :] |> transform
+        species_data = data[2:end, :] |> transform
         time_esn = ESN(W_time, time_data, W_in_time, activation=activation, nla_type=nla_type, extended_states=extended_states)
         W_out_time = ESNtrain(time_esn, time_beta)
         species_esn = ESN(W_species, species_data, W_in_species, activation=activation, nla_type=nla_type, extended_states=extended_states)

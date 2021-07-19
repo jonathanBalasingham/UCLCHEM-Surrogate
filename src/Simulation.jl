@@ -91,7 +91,7 @@ function simulate(s::Simulation)
     mean_scores
 end
 
-function simulate(s::Simulation, datasets::Array{Matrix})
+function simulate(s::Simulation, datasets::Array{Matrix{Float64}}, buffer=50)
     # create the esn
     # run through all the training train_data
     scores = Array{Float64, 1}[]
@@ -105,17 +105,19 @@ function simulate(s::Simulation, datasets::Array{Matrix})
         end
         esn = create_esn(s.settings.esn_settings, data)
         W_out = ESNtrain(esn, s.settings.esn_settings.beta)
+        esn = create_esn(s.settings.esn_settings, data[:, 1:buffer])
         # train -> predict the fit
-        prediction = ESNfitted(esn, W_out, autonomous=true)
+        prediction = ESNpredict(esn, size(data, 2)-buffer, W_out)
+        test_data = data[:, buffer+1:end]
         # generate a score for each set of data
         if size(prediction, 1) == 1
             prediction = prediction[begin,:]
-            data = data[begin,:]
+            test_data = test_data[begin,:]
         end
-        mae_score = mae(data, prediction)
-        roc_score = roc(data, prediction)
-        pmae_score = perc_mae(data, prediction)
-        proc_score = perc_roc(data, prediction)
+        mae_score = mae(test_data, prediction)
+        roc_score = roc(test_data, prediction)
+        pmae_score = perc_mae(test_data, prediction)
+        proc_score = perc_roc(test_data, prediction)
         push!(scores, [mae_score, pmae_score, roc_score, proc_score])
     end
     score_matrix = hcat(scores...)
@@ -129,15 +131,15 @@ staticdir(x) = datadir("sims", "Static", x)
 function makesim(alpha,
                 sigma,
                 beta,
-                type,
-                preload_data=false;
+                type;
+                datasets=nothing,
                 datastore=adaptivedir(""),
                 transform=x -> log10.(x .+ 1.),
                 transform_alias="log10",
                 transform_back=x->10. .^x .-1.,
                 activation = tanh, 
                 nla_type = NLADefault(), 
-                extended_states = false,
+                extended_states = true,
                 W_path=projectdir("_research", "W_default.csv"),
                 W_in_path=projectdir("_research", "W_in_default.csv"))
 
@@ -157,11 +159,10 @@ function makesim(alpha,
 
     s = Simulation(type, datastore, transform, transform_alias, transform_back, RolledSimulationSettings(esns, ChemistrySettings()))
 
-    if preload_data
-        datasets = [readdlm(fp,',',header=true) for fp in readdir(datastore, join=true)]
-        return simulate(s, datasets)
-    else
+    if isnothing(datasets)
         return simulate(s)
+    else
+        return simulate(s, datasets)
     end
 end
 
@@ -173,8 +174,8 @@ function makesim(reservoir_size,
                  sigma,
                  beta,
                  type,
-                 savepath,
-                 preload_data=false;
+                 savepath;
+                 datasets=nothing,
                  datastore=adaptivedir(""),
                  transform=x->log10.(x .+ 1),
                  transform_alias="log10",
@@ -183,7 +184,7 @@ function makesim(reservoir_size,
                  radius=0.7,
                  activation = tanh, 
                  nla_type = NLADefault(), 
-                 extended_states = false,
+                 extended_states = true,
                  datatore=adaptivedir(""))
     #= 
     We're going to create a new ESN with new reservoir and input weights 
@@ -206,6 +207,8 @@ function makesim(reservoir_size,
             sigma = sigma, 
             nla_type = nla_type, 
             extended_states = extended_states)
+
+    W_in = init_dense_input_layer(esn.res_size, esn.in_size, sigma) # Use the dense version instead
     
     W_path = projectdir("_research", "W_"*savepath*".csv")
     if !isfile(W_path)
@@ -218,7 +221,7 @@ function makesim(reservoir_size,
     W_in_path = projectdir("_research", "W_in_"*savepath*".csv")
     if !isfile(W_in_path)
         open(W_in_path, "w") do io
-            writedlm(io, esn.W_in, ',')
+            writedlm(io, W_in, ',')
         end
     else
         @warn "Input weight file already exists at $W_in_path"
@@ -240,10 +243,9 @@ function makesim(reservoir_size,
     
 
     s = Simulation(type, datastore, transform, transform_alias, transform_back, RolledSimulationSettings(esns, ChemistrySettings()))
-    if preload_data
-        datasets = [readdlm(fp,',',header=true) for fp in readdir(datastore, join=true)]
-        return simulate(s, datasets)
-    else
+    if isnothing(datasets)
         return simulate(s)
+    else
+        return simulate(s, datasets)
     end
 end
