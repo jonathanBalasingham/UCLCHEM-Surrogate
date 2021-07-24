@@ -10,8 +10,8 @@ rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_final.csv", "initco
 
 tspan = (0., 10^7 * 365. * 24. * 3600.)
                       #  zeta, omega, T, F_UV, A_v, E, density
-rates_set_lower_bound = [1e-17, 0.5, 10, 1., 10., 1e2]
-rates_set_upper_bound = [1e-14, 0.5, 300, 1., 10., 1e6]
+rates_set_lower_bound = [1e-16, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [9e-16, 0.5, 300, 1., 10., 1e6]
 
 parameter_samples = sample(1000, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
 
