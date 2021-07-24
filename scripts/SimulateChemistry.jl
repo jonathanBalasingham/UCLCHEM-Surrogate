@@ -1,3 +1,4 @@
+DEPOT_PATH[1] = "/export/archimedes/jrh/jonb/.julia"
 using DrWatson
 using DelimitedFiles, Surrogates
 @quickactivate "UCLCHEM Surrogate"
@@ -9,12 +10,12 @@ rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_final.csv", "initco
 
 tspan = (0., 10^7 * 365. * 24. * 3600.)
                       #  zeta, omega, T, F_UV, A_v, E, density
-rates_set_lower_bound = [1e-17, 0.5, 10, 0.5, 2., 1e2]
-rates_set_upper_bound = [1., 0.5, 100, 1.5, 10., 1e5]
+rates_set_lower_bound = [1e-17, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [1e-14, 0.5, 300, 1., 10., 1e6]
 
 parameter_samples = sample(1000, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
 
-write_path(x) = datadir("sims", "Adaptive_unstable", x)
+write_path(x) = datadir("sims", "dark_cloud", x)
 
 
 function sim(parameter_samples)
@@ -33,10 +34,16 @@ function sim(parameter_samples)
             @info "errored on $i : $parameter_sample"
         end
         i += 1
+	println(i)
     end
 end
 
+<<<<<<< HEAD
 sim(parameter_samples[502:end])
+=======
+sim(parameter_samples[1:1])
+sim(parameter_samples[2:end])
+>>>>>>> 261816ffe617372e40bb387916eef005df50afac
 
 
 #=
