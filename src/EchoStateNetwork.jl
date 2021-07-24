@@ -31,6 +31,12 @@ end
 
 reset!(res::EchoStateReservoir{T}) where T<:AbstractFloat = res.state .*= 0
 
+function Base.show(io::IO, res::EchoStateReservoir{T}) where T<:AbstractFloat
+    sparsity  = count(x->x!=0.0, res.weight) / length(res.weight)
+    radius = maximum(abs.(eigvals(res.weight)))
+    print(io, "EchoStateReservoir{$T}(sparsity: $(sparsity*100)%, radius: $radius, size: $(size(res.weight, 1)))")
+end
+
 #=
 This could be changed to a Flux Chain, but I need to figure out
 a way to make the reservoir to behave recurrently instead of as 
