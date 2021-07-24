@@ -3,17 +3,17 @@ using Surrogates, DataStructures, JLD2, DataFrames
 
 Random.seed!(0)
 
-hyperparameter_lower_bound = [500, 200, 0.01, 0.1, 1.0]
-hyperparameter_upper_bound = [500, 400, .9, 0.5, 2.5]
+hyperparameter_lower_bound = [3000, 50, 0.01, 0.1, 1.0]
+hyperparameter_upper_bound = [3000, 1500, .9, 0.5, 3.5]
 
 hpnames = ["reservoir_size","degree","alpha", "sigma", "beta", "type", "savepath"]
-hp_set = sample(10, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
-radius_set = sample(10, .6, 1.25, SobolSample())
+hp_set = sample(100, hyperparameter_lower_bound, hyperparameter_upper_bound, SobolSample())
+radius_set = sample(100, .6, 1.25, SobolSample())
 
 rad_ix = length(radius_set)
 for hp in hp_set
     @time begin
-        full_params = [hp..., "species", "species_$(hp[2] |> round |> Integer)_$(hp[4])_$(radius_set[rad_ix])"]
+        full_params = [hp..., "species", "species_$(hp[1])_$(hp[2] |> round |> Integer)_$(hp[4])_$(radius_set[rad_ix])"]
         full_params[1:2] = full_params[1:2] .|> round .|> Integer
         d = OrderedDict(zip(hpnames, full_params))
         p = copy(d)
@@ -25,22 +25,23 @@ for hp in hp_set
                                                                #transform=x -> x .+ 1e-30,
                                                                transform_alias=alias,
                                                                #transform_back=x->x .^ 10 .- 1e-30)
-                                                               transform_back=x->x .- 1e-30)
+                                                               transform_back=x-> 10 .^ x .- 1e-30)
         d["transform"] = alias
         d["mae"] = mae_score
         d["pmae"] = pmae_score
         d["roc"] = roc_score
         d["proc"] = proc_score
         d["radius"] = radius_set[rad_ix]
-        @tagsave(datadir("sims","tuning", "ext_states_auto_log", savename(Dict(p), "jld2")), Dict(d))
+        println("$proc_score , $pmae_score")
+        @tagsave(datadir("sims","tuning", "auto_log", savename(Dict(p), "jld2")), Dict(d))
         rad_ix -= 1
     end
 end
 
-df = collect_results(datadir("sims", "tuning", "ext_states_auto_log"))
+df = collect_results(datadir("sims", "tuning", "auto_log"))
 sort!(df, [:roc, :proc])
 
-top_results = first(df, 3)
+top_results = first(df, 1)
 
 data = readdlm(readdir(datadir("sims", "Adaptive"), join=true)[1], ',', header=false)
 time = data[1, :]
@@ -57,7 +58,7 @@ for result in eachrow(top_results)
             activation = tanh,
             alpha = result.alpha, 
             nla_type = NLADefault(), 
-            extended_states = true)
+            extended_states = false)
     W_out = ESNtrain(esn, result.beta)
     esn = ESN(W,
             train_data[:,1:buffer],
@@ -65,7 +66,7 @@ for result in eachrow(top_results)
             activation = tanh,
             alpha = result.alpha, 
             nla_type = NLADefault(), 
-            extended_states = true)
+            extended_states = false)
     output = ESNpredict(esn, size(train_data, 2)-buffer, W_out)
     #println(sum.(eachcol(output)))
     for (i,k) in enumerate(eachrow(output))
@@ -90,7 +91,7 @@ for buffer in buffers
             activation = tanh,
             alpha = result.alpha, 
             nla_type = NLADefault(), 
-            extended_states = true)
+            extended_states = false)
     W_out = ESNtrain(esn, result.beta)
     esn = ESN(W,
             train_data[:,1:buffer],
@@ -98,7 +99,7 @@ for buffer in buffers
             activation = tanh,
             alpha = result.alpha, 
             nla_type = NLADefault(), 
-            extended_states = true)
+            extended_states = false)
     output = ESNpredict(esn, size(train_data, 2)-buffer, W_out)
     #println(sum.(eachcol(output)))
     for (i,k) in enumerate(eachrow(output))

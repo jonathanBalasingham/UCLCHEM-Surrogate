@@ -36,7 +36,7 @@ function sim(parameter_samples)
     end
 end
 
-sim(parameter_samples)
+sim(parameter_samples[502:end])
 
 
 #=
