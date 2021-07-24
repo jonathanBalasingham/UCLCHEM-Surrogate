@@ -184,7 +184,7 @@ function makesim(reservoir_size,
                  radius=0.7,
                  activation = tanh, 
                  nla_type = NLADefault(), 
-                 extended_states = true,
+                 extended_states = false,
                  datatore=adaptivedir(""))
     #= 
     We're going to create a new ESN with new reservoir and input weights 

@@ -38,8 +38,12 @@ function sim(parameter_samples)
     end
 end
 
+<<<<<<< HEAD
+sim(parameter_samples[502:end])
+=======
 sim(parameter_samples[1:1])
 sim(parameter_samples[2:end])
+>>>>>>> 261816ffe617372e40bb387916eef005df50afac
 
 
 #=
