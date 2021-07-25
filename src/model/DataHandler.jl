@@ -1,8 +1,8 @@
 using DelimitedFiles, Serialization
 
-function _extract_physical_parameters(fp::String)
+function _extract_physical_parameters(fp::String; prefix="CVODE_")
     fp |> 
-        x -> replace(x, "CVODE_" => "") |>
+        x -> replace(x, prefix => "") |>
         x -> replace(x, ".csv" => "") |>
         x -> split(x, '_') .|> 
         x -> parse(Float64, x)
@@ -21,8 +21,8 @@ function _extract_esn_parameters(fp::String)
         x -> parse(Float64, x)
 end
 
-function _rdaep(path::String)
-    params = _extract_physical_parameters(basename(path))
+function _rdaep(path::String; prefix="CVODE_")
+    params = _extract_physical_parameters(basename(path), prefix=prefix)
     data = readdlm(path, ',', header=false)
     (params, data)
 end
