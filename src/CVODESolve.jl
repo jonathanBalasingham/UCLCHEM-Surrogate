@@ -38,8 +38,8 @@ end
 
 function solve(prob::ChemicalNetworkProblem,
                 saveat::Array; 
-                abstol::Float64=10^-30, 
-                reltol=10^-8, 
+                abstol::Float64=10^-20, 
+                reltol=10^-6, 
                 maxiter::Int=10000, 
                 solver=CVODE_BDF,
                 time_factor=1.1, time_factor_pre_1000_years=10.)
