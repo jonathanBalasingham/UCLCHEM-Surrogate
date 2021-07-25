@@ -18,7 +18,7 @@ data_prefix = "CVODE_adaptive_"
 
 for path in paths
     if stat(path).size < size_threshold
-        params, data = _rdaep(path)
+        params, data = _rdaep(path, prefix=data_prefix)
         weights_filename = path |> basename |>
                             x -> replace(x, data_prefix => "W_out_species_") |>
                             x -> replace(x, ".csv" => "")
