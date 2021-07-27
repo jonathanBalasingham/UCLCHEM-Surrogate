@@ -139,7 +139,7 @@ function predict!(esn::EchoStateNetwork{T}, xt::Matrix{T}, st::Matrix{T}) where 
     input = vcat(st[:, 1:warmup_size], xt)
     for d in eachcol(input[:, 1:end-1]) esn(d) end
     pred = esn(input[:, end])
-    hcat(pred, [pred = esn(vcat(st[:, i], pred)) for i in size(xt,2)+1:size(st, 2)]...)
+    hcat(pred, [pred = esn(vcat(st[:, i], pred)) for i in size(xt,2)+2:size(st, 2)]...)
 end
 
 
