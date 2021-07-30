@@ -81,12 +81,14 @@ struct ChemicalNetworkProblem
     species::Array{String,1}
     u0::Array{Float64,1}
     tspan::Tuple{Float64, Float64}
+    rates::Array
 end
 
 struct ChemicalNetworkSolution
     t
     u::Array{Array{Float64,1},1}
     species::Array{String,1}
+    rates::Array
 end
 
 # species(network::ChemicalNetworkProblem) = network.species

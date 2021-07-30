@@ -3,11 +3,11 @@ using DifferentialEquations
 using DelimitedFiles
 using ProgressMeter
 using DiffEqCallbacks
-#import DifferentialEquations: solve
+import DifferentialEquations: solve
 
 function solve(prob::ChemicalNetworkProblem; 
-                abstol::Float64=10^-30, 
-                reltol=10^-8, 
+                abstol::Float64=10^-20, 
+                reltol=10^-6, 
                 maxiter::Int=10000, 
                 solver=CVODE_BDF,
                 time_factor=1.1, time_factor_pre_1000_years=10.)
@@ -33,7 +33,7 @@ function solve(prob::ChemicalNetworkProblem;
         @async update!(p, current_time |> floor |> Integer)
         current_problem = remake(current_problem, tspan=(current_time, target_time), u0=sol.u[end])
     end
-    ChemicalNetworkSolution(t,u, prob.species)
+    ChemicalNetworkSolution(t,u, prob.species, prob.rates)
 end
 
 function solve(prob::ChemicalNetworkProblem,
@@ -73,7 +73,7 @@ function solve(prob::ChemicalNetworkProblem,
         current_problem = remake(current_problem, tspan=(current_time, target_time), u0=sol.u[end])
         sub_saveat = filter(x -> x < target_time && x > current_time, saveat)
     end
-    ChemicalNetworkSolution(t,u, prob.species)
+    ChemicalNetworkSolution(t,u, prob.species, prob.rates)
 end
 
 function solve(prob::ChemicalNetworkProblem,

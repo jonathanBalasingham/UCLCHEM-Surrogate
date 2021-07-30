@@ -21,13 +21,13 @@ function EchoStateReservoir{T}(reservoir_size::Int, spectral_radius::A, sparsity
     EchoStateReservoir(convert.(T, r .*  spectral_radius / maximum(abs.(eigvals(r)))), zeros(T, reservoir_size), activation)
 end
 
-(res::EchoStateReservoir{T})(input::Vector{T}, α=1.0) where T<:AbstractFloat = 
+(res::EchoStateReservoir{T})(input::Vector{T}, α=0.1) where T<:AbstractFloat = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(input + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{T}, α=1.0) where T<:AbstractFloat = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{T}, α=0.1) where T<:AbstractFloat = res(input, α)
 
-(res::EchoStateReservoir{T})(input::Vector{V}, α=1.0) where {T<:AbstractFloat, V<:AbstractFloat} = 
+(res::EchoStateReservoir{T})(input::Vector{V}, α=0.1) where {T<:AbstractFloat, V<:AbstractFloat} = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(convert(Vector{T}, input) + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{V}, α=1.0) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{V}, α=0.1) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
 
 reset!(res::EchoStateReservoir{T}) where T<:AbstractFloat = res.state .*= 0
 
@@ -52,7 +52,6 @@ mutable struct EchoStateNetwork{T<:AbstractFloat}
             input_size == res_size || @error "Incompatible input and reservoir sizes:($input_size, $res_size)
                                                          Reservoir needs size: $viable_res_size"
         end
-    
         new(input_layer, W, output_layer)
     end
 end
@@ -62,7 +61,7 @@ reset!(esn::EchoStateNetwork{T}) where T<:AbstractFloat = reset!(esn.reservoir)
 function EchoStateNetwork{T}(input_size::I, 
                              reservoir_size::I, 
                              output_size::I, 
-                             σ=0.5, λ=1.0; 
+                             σ=0.5, ρ=1.0; 
                              sparsity=0.3, 
                              input_activation=tanh, 
                              reservoir_activation=tanh, 
@@ -70,7 +69,7 @@ function EchoStateNetwork{T}(input_size::I,
     f = T == Float32 ? f32 : f64
     inp = Dense(input_size, reservoir_size, input_activation)
     inp.weight .*= σ
-    res = EchoStateReservoir{T}(reservoir_size, λ, sparsity, activation=reservoir_activation)
+    res = EchoStateReservoir{T}(reservoir_size, ρ, sparsity, activation=reservoir_activation)
     out = f(Dense(reservoir_size, output_size, output_activation))
     EchoStateNetwork{T}(f(inp), res, out)
 end
@@ -131,10 +130,11 @@ function predict!(esn::EchoStateNetwork{T}, input::Matrix{T}; clear_state=true) 
     hcat([esn(d) for d in eachcol(input)]...)
 end
 
-function predict!(esn::EchoStateNetwork{T}, xt::Matrix{T}, st::Matrix{T}) where T<:AbstractFloat
+function predict!(esn::EchoStateNetwork{T}, xt::Matrix{T}, st::Matrix{T}; clear_state=true) where T<:AbstractFloat
     size(xt, 1) + size(st, 1) == inputdim(esn) || @error "Dimension of X(t) plus S(t) must be equal to the input dimension of the ESN"
     size(xt,2) >= size(st, 2) && begin @warn "length of X(t) is less than or equal to length of S(t), no prediction will be done"; return end
     warmup_size = size(xt, 2)
+    if clear_state ESN.reset!(esn) end
 
     input = vcat(st[:, 1:warmup_size], xt)
     for d in eachcol(input[:, 1:end-1]) esn(d) end

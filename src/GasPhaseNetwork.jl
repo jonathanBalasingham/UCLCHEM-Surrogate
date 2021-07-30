@@ -106,9 +106,10 @@ function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365.
     reactions_data = read_in_reactions(rfp)
     calculateRates!(reactions_data, p)
     network = create_gas_phase_network(reactions_data)
+    rates = reactions_data[!, end]
     sys = formulate_ode_system(network)
     species_name = get_species_names(network)
     u0 = create_u0(network, ics)
-    cnp = ChemicalNetworkProblem(sys, species_name, u0, tspan)
+    cnp = ChemicalNetworkProblem(sys, species_name, u0, tspan, rates)
     return cnp
 end
