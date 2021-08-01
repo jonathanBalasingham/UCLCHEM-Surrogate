@@ -1,6 +1,6 @@
 module ESN
 
-using Base: AbstractFloat
+using Base: AbstractFloat, Integer
 using SparseArrays, LinearAlgebra
 import Base.:*
 using Flux
@@ -150,6 +150,9 @@ mutable struct DeepEchoStateNetwork{T<:AbstractFloat, L} <: AbstractEchoStateNet
     input_layers::Array{Dense, L}
     reservoirs::Array{EchoStateReservoir{T}, L}
     output_layer::Dense
+    function DeepEchoStateNetwork{T}(input_dim::I, reservoir_size::I, layers::I, output_dim::I) where {I<:Integer}
+        
+    end
 end
 
 function (desn::DeepEchoStateNetwork)(input::Vector)
@@ -160,6 +163,7 @@ function (desn::DeepEchoStateNetwork)(input::Vector)
     end
     states |> desn.output_layer
 end
+
 
 
 
