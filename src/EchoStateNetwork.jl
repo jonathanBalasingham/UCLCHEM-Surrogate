@@ -1,10 +1,13 @@
 module ESN
 
+using Base: AbstractFloat
 using SparseArrays, LinearAlgebra
 import Base.:*
 using Flux
 
-mutable struct EchoStateReservoir{T <: AbstractFloat}
+abstract type AbstractEchoStateNetwork end
+
+mutable struct EchoStateReservoir{T <: AbstractFloat} <: AbstractEchoStateNetwork
     weight::Matrix{T}
     b::Vector{T}
     f::Function
@@ -143,5 +146,20 @@ function predict!(esn::EchoStateNetwork{T}, xt::Matrix{T}, st::Matrix{T}; clear_
 end
 
 
+mutable struct DeepEchoStateNetwork{T<:AbstractFloat, L} <: AbstractEchoStateNetwork
+    input_layers::Array{Dense, L}
+    reservoirs::Array{EchoStateReservoir{T}, L}
+    output_layer::Dense
 end
+
+function (desn::DeepEchoStateNetwork)(input::Vector)
+    states = []
+    for (inp_lay, res) in zip(desn.input_layers, desn.reservoirs)
+        input = input |> inp_lay |> res
+        append!(states, input)
+    end
+    states |> desn.output_layer
+end
+
+
 
