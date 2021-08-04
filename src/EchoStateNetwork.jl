@@ -6,8 +6,9 @@ import Base.:*
 using Flux
 
 abstract type AbstractEchoStateNetwork{T} end
+abstract type AbstractReservoir{T} end
 
-mutable struct EchoStateReservoir{T <: AbstractFloat}
+mutable struct EchoStateReservoir{T<:AbstractFloat} <: AbstractReservoir
     """
     These fields allow this struct to be treated as a 
     recurrent layer in Flux. We do not apply @functor
@@ -17,6 +18,21 @@ mutable struct EchoStateReservoir{T <: AbstractFloat}
     32-bit or 64-bit floating point throughtout for 
     performance reasons.
     """
+    weight::Matrix{T}
+    b::Vector{T}
+    f::Function
+    state::Vector{T}
+end
+
+mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir
+    weight::Matrix{T}
+    b::Vector{T}
+    f::Function
+    state::Vector{T}
+    feedback::Bool
+end
+
+mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir
     weight::Matrix{T}
     b::Vector{T}
     f::Function
