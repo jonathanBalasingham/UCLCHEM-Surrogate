@@ -33,13 +33,13 @@ function EchoStateReservoir{T}(reservoir_size::Int, spectral_radius::A, sparsity
     EchoStateReservoir(convert.(T, r .*  spectral_radius / maximum(abs.(eigvals(r)))), zeros(T, reservoir_size), activation)
 end
 
-(res::EchoStateReservoir{T})(input::Vector{T}, α=.5) where T<:AbstractFloat = 
+(res::EchoStateReservoir{T})(input::Vector{T}, α=.1) where T<:AbstractFloat = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(input + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{T}, α=.5) where T<:AbstractFloat = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{T}, α=.1) where T<:AbstractFloat = res(input, α)
 
-(res::EchoStateReservoir{T})(input::Vector{V}, α=.5) where {T<:AbstractFloat, V<:AbstractFloat} = 
+(res::EchoStateReservoir{T})(input::Vector{V}, α=.1) where {T<:AbstractFloat, V<:AbstractFloat} = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(convert(Vector{T}, input) + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{V}, α=.5) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{V}, α=.1) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
 
 reset!(res::EchoStateReservoir{T}) where T<:AbstractFloat = res.state .*= 0
 
@@ -80,7 +80,7 @@ function EchoStateNetwork{T}(input_size::I,
                              reservoir_activation=tanh, 
                              output_activation=identity) where {I<:Integer, T<:AbstractFloat}
     f = T == Float32 ? f32 : f64
-    inp = Dense(input_size, reservoir_size, input_activation)
+    inp = Dense(input_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=sparsity))
     inp.weight .*= σ
     res = EchoStateReservoir{T}(reservoir_size, ρ, sparsity, activation=reservoir_activation)
     out = f(Dense(reservoir_size, output_size, output_activation))
@@ -111,7 +111,7 @@ function DeepEchoStateNetwork{T}(input_size::I,
                                 reservoir_activation=tanh, 
                                 output_activation=identity) where {I<:Integer, T<:AbstractFloat}
     f = T == Float32 ? f32 : f64
-    inp = Dense[f(Dense(i == 1 ? input_size : reservoir_size, reservoir_size, input_activation)) for i in 1:layers]
+    inp = Dense[f(Dense(i == 1 ? input_size : reservoir_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=sparsity))) for i in 1:layers]
     for i in inp i.weight .*= σ end
     res = EchoStateReservoir{T}[EchoStateReservoir{T}(reservoir_size, ρ, sparsity, activation=reservoir_activation) for i in 1:layers]
     out = f(Dense(reservoir_size*layers, output_size, output_activation))
