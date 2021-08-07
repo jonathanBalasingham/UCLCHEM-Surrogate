@@ -44,7 +44,9 @@ problems = parameter_samples .|>
                 x->formulate_all(rfp, icfp, x)
             end
 
-train = problems |>
+
+
+train = problems |> solve |> x->
              x->solve(x)
 
 # two possible pre-processes: each species between 0,1 
