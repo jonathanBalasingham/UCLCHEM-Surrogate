@@ -3,7 +3,7 @@ using DrWatson
 
 using DelimitedFiles, ReservoirComputing, Serialization, DataFrames
 
-datapath = datadir("sims", "dark_cloud")
+datapath = datadir("sims", "dark_cloud_low_tol")
 paths = readdir(datapath, join=true)
 
 W = deserialize("models/reservoir")
@@ -19,10 +19,12 @@ time_threshold = 24*3600*365*10^7 - 24*3600*365*10^6
 viable_interpolation_points = 0
 
 for path in paths
+    println(path)
     if stat(path).size < size_threshold
         params, data = _rdaep(path, prefix=data_prefix)
         if data[1, end] < time_threshold
-            @info "Skipping this file. Ending simulation time is: $(data[1,end])"
+            @info "Removing this file. Ending simulation time is: $(data[1,end])"
+            rm(path)
             continue
         end
         weights_filename = path |> basename |>

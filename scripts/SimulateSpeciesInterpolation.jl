@@ -45,3 +45,10 @@ for (i,k) in enumerate(eachrow(prediction))
     plot!(train_subset[1,buffer+1:end],train_subset[i+1, buffer+1:end], title="", label="Groud Truth", legend=:outertopright)
     savefig(projectdir("plots_full_interp","species_$(p.species[i]).png"))
 end
+
+for (i,k) in enumerate(eachrow(prediction))
+    plot(train_subset[1,buffer+1:end], prediction[i, :], title="", label="Interpolated", legend=:outertopright)
+    plot!(train_subset[1,buffer+1:end],  prediction2[i, :], title="", label="Predicted", legend=:outertopright)
+    plot!(train_subset[1,buffer+1:end],train_subset[i+1, buffer+1:end], title="", label="Groud Truth", legend=:outertopright)
+    savefig(projectdir("plots_full_interp","species_$(p.species[i]).png"))
+end

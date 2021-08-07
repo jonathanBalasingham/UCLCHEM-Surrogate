@@ -46,3 +46,16 @@ function perc_roc(truth::T, pred::T) where {T <: Vector}
     roc_pred = pred[2:end] .- pred[1:end-1]
     perc_mae(roc_truth, roc_pred)
 end
+
+import Flux
+
+function retroactive_loss(prediction::Matrix, prob, solver; loss=Flux.Losses.mae)
+    """
+    Prediction for time is in the top row of the 
+    prediction matrix.
+    """
+    saveat = prediction[begin, :]
+    sol = solve(prob, saveat, solver=solver())
+    true_solution = hcat(sol.u...)
+    loss(true_solution, prediction[2:end, :])
+end
