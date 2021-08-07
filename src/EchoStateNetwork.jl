@@ -5,11 +5,12 @@ using SparseArrays, LinearAlgebra
 import Base.:*
 using Flux
 using Distributions
+import DiffEqBase: ODEProblem
 
 abstract type AbstractEchoStateNetwork{T} end
 abstract type AbstractReservoir{T} end
 
-mutable struct EchoStateReservoir{T<:AbstractFloat} <: AbstractReservoir
+mutable struct EchoStateReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     """
     These fields allow this struct to be treated as a 
     recurrent layer in Flux. We do not apply @functor
@@ -23,24 +24,26 @@ mutable struct EchoStateReservoir{T<:AbstractFloat} <: AbstractReservoir
     b::Vector{T}
     f::Function
     state::Vector{T}
-    function EchoStateReservoir{T}(reservoir_size::Int; spectral_radius::A, sparsity::A, activation=identity) where {A<:Real, T<:AbstractFloat}
+    α::T
+    function EchoStateReservoir{T}(reservoir_size::Int; spectral_radius::A, sparsity::A, activation=identity, α=1.0) where {A<:Real, T<:AbstractFloat}
         reservoir_size < 1 && @error "Invalid reservoir size: $reservoir_size"
         0 < sparsity < 1 || @error "Sparsity out of range of (0,1)"
         
         r = sprand(reservoir_size, reservoir_size, sparsity) |> Matrix{T}
-        new{T}(convert.(T, r .*  spectral_radius / maximum(abs.(eigvals(r)))), zeros(T, reservoir_size), activation)
+        new{T}(convert.(T, r .*  spectral_radius / maximum(abs.(eigvals(r)))), zeros(T, reservoir_size), activation, zeros(T, reservoir_size), α)
     end
 end
 
 
-mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir
+mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     """
     """
     weight::Matrix{T}
     b::Vector{T}
     f::Function
     state::Vector{T}
-    function SimpleCyclicReservoir{T}(reservoir_size::Int, c::T, feedback::T=0.0; activation=tanh)
+    α::T
+    function SimpleCyclicReservoir{T}(reservoir_size::Int, c::T, feedback::T=0.0; activation=tanh, α=1.0) where T<:AbstractFloat
         W = zeros(T, reservoir_size, reservoir_size)
         for i in 2:reservoir_size W[i, i-1] = c end 
         if feedback != 0 
@@ -50,14 +53,15 @@ mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir
     end
 end
 
-mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir
+mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     """
     """
     weight::Matrix{T}
     b::Vector{T}
     f::Function
     state::Vector{T}
-    function DelayLineReservoir{T}(reservoir_size::Int, c::T; activation=tanh)
+    α::T
+    function DelayLineReservoir{T}(reservoir_size::Int, c::T; activation=tanh, α=1.0) where T<:AbstractFloat
         W = zeros(T, reservoir_size, reservoir_size)
         for i in 2:reservoir_size W[i, i-1] = c end 
         W[begin, end] = c
@@ -65,36 +69,39 @@ mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir
     end
 end
 
-EchoStateReservoir(W::Matrix{T}, b::Vector{T}, f::Function) where T<:AbstractFloat = EchoStateReservoir{T}(W,b,f,zeros(T, size(W, 1)))
+EchoStateReservoir(W::Matrix{T}, b::Vector{T}, f::Function, α=1.0) where T<:AbstractFloat = EchoStateReservoir{T}(W,b,f,zeros(T, size(W, 1)),α)
 
 
-(res::EchoStateReservoir{T})(input::Vector{T}, α=.1) where T<:AbstractFloat = 
+(res::EchoStateReservoir{T})(input::Vector{T}, α=res.α) where T<:AbstractFloat = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(input + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{T}, α=.1) where T<:AbstractFloat = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{T}, α=res.α) where T<:AbstractFloat = res(input, α)
 
-(res::EchoStateReservoir{T})(input::Vector{V}, α=.1) where {T<:AbstractFloat, V<:AbstractFloat} = 
+(res::EchoStateReservoir{T})(input::Vector{V}, α=res.α) where {T<:AbstractFloat, V<:AbstractFloat} = 
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(convert(Vector{T}, input) + res.weight*res.state)
-*(res::EchoStateReservoir{T}, input::Vector{V}, α=.1) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
+*(res::EchoStateReservoir{T}, input::Vector{V}, α=res.α) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
 
-reset!(res::R{T}) where {R<:AbstractReservoir,T<:AbstractFloat} = res.state .*= 0
+reset!(res::R) where {R<:AbstractReservoir} = res.state .*= 0
 
 function Base.show(io::IO, res::EchoStateReservoir{T}) where T<:AbstractFloat
     sparsity  = count(x->x!=0.0, res.weight) / length(res.weight)
     radius = maximum(abs.(eigvals(res.weight)))
-    print(io, "EchoStateReservoir{$T}(sparsity: $(sparsity*100)%, radius: $radius, size: $(size(res.weight, 1)))")
+    print(io, "EchoStateReservoir{$T}(sparsity: $(sparsity*100)%, radius: $radius, size: $(size(res.weight, 1)), leakage: $(res.α))")
 end
 
 
 function create_reservoir(res_type::DataType, float::DataType, kwargs...)
     if res_type == EchoStateReservoir
         EchoStateReservoir{float}(kwargs[:size], :sparsity in kwargs ? kwargs[:sparsity] : .3, 
-                                 :spectral_radius in kwargs ? kwargs[:spectral_radius] : 1.0)
+                                 :spectral_radius in kwargs ? kwargs[:spectral_radius] : 1.0,
+                                 :α in kwargs ? kwargs[:α] : 1.0)
     elseif res_type == SimpleCyclicReservoir
         SimpleCyclicReservoir{float}(kwargs[:size], kwargs[:c], kwargs[:feedback],
-                                    :activation in kwargs ? kwargs[:activation] : tanh)
+                                    :activation in kwargs ? kwargs[:activation] : tanh,
+                                    :α in kwargs ? kwargs[:α] : 1.0)
     elseif res_type == DelayLineReservoir
         DelayLineReservoir{float}(kwargs[:size], kwargs[:c], 
-                                 :activation in kwargs ? kwargs[:activation] : tanh)
+                                 :activation in kwargs ? kwargs[:activation] : tanh,
+                                 :α in kwargs ? kwargs[:α] : 1.0)
     end
 end
 
@@ -123,7 +130,7 @@ reset!(esn::EchoStateNetwork{T}) where T<:AbstractFloat = reset!(esn.reservoir)
 function EchoStateNetwork{T}(input_size::I, 
                              reservoir_size::I, 
                              output_size::I, 
-                             σ=0.5, ρ=1.0; 
+                             σ=0.5, ρ=1.0, α=1.0; 
                              sparsity=0.3, 
                              input_activation=tanh, 
                              reservoir_activation=tanh, 
@@ -131,7 +138,7 @@ function EchoStateNetwork{T}(input_size::I,
     f = T == Float32 ? f32 : f64
     inp = Dense(input_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=sparsity))
     inp.weight .*= σ
-    res = EchoStateReservoir{T}(reservoir_size, ρ, sparsity, activation=reservoir_activation)
+    res = EchoStateReservoir{T}(reservoir_size, spectral_radius=ρ, sparsity=sparsity, activation=reservoir_activation, α=α)
     out = f(Dense(reservoir_size, output_size, output_activation))
     EchoStateNetwork{T}(f(inp), res, out)
 end
@@ -154,7 +161,7 @@ function DeepEchoStateNetwork{T}(input_size::I,
                                 reservoir_size::I,
                                 layers::I,
                                 output_size::I,
-                                σ=0.5, ρ=1.0; 
+                                σ=0.5, ρ=1.0, α=.5; 
                                 sparsity=0.3, 
                                 input_activation=tanh, 
                                 reservoir_activation=tanh, 
@@ -162,7 +169,7 @@ function DeepEchoStateNetwork{T}(input_size::I,
     f = T == Float32 ? f32 : f64
     inp = Dense[f(Dense(i == 1 ? input_size : reservoir_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=sparsity))) for i in 1:layers]
     for i in inp i.weight .*= σ end
-    res = EchoStateReservoir{T}[EchoStateReservoir{T}(reservoir_size, ρ, sparsity, activation=reservoir_activation) for i in 1:layers]
+    res = EchoStateReservoir{T}[EchoStateReservoir{T}(reservoir_size, spectral_radius=ρ, sparsity=sparsity, activation=reservoir_activation, α=α) for i in 1:layers]
     out = f(Dense(reservoir_size*layers, output_size, output_activation))
     DeepEchoStateNetwork(inp, res, out)
 end
@@ -170,7 +177,7 @@ end
 reset!(desn::DeepEchoStateNetwork) = for res in desn.reservoirs reset!(res) end
 
 
-(esn::EchoStateNetwork)(x::Vector) = x |> esn.input_layer |> esn.reservoir |> esn.output_layer
+(esn::EchoStateNetwork)(x::T) where T<:AbstractArray = x |> esn.input_layer |> esn.reservoir |> esn.output_layer
 
 stateof(esn::EchoStateNetwork) = esn.reservoir.state
 inputdim(esn::EchoStateNetwork) = size(esn.input_layer.weight, 2)
@@ -267,9 +274,9 @@ function (desn::DeepEchoStateNetwork)(input::AbstractArray)
     states |> desn.output_layer
 end
 
-mutable struct HybridEchoStateNetwork{R<:AbstractReservoir,T<:AbstractFloat} <: AbstractEchoStateNetwork
+mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} <: AbstractEchoStateNetwork{T}
     input_layer::Dense
-    reservoir::R{T}
+    reservoir::R
     output_layer::Dense
     prob::ODEProblem
     function HybridEchoStateNetwork{R, T}(input_size::I,
@@ -279,9 +286,9 @@ mutable struct HybridEchoStateNetwork{R<:AbstractReservoir,T<:AbstractFloat} <: 
                                         σ = .5;
                                         input_activation=identity, 
                                         output_activation=identity,
-                                        kwargs...) where {I<:Integer}
-        
-        input_layer = Dense(input_size + length(problem.u0), reservoir_size, input_activation)
+                                        kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
+        additional_solver_input = length(problem.u0)
+        input_layer = Dense(input_size + additional_solver_input, reservoir_size, input_activation)
         rand_indx = rand(1:length(input_layer.bias), 1, reservoir_size)
         rand_weight = rand(Uniform(-σ, σ), reservoir_size)
         new_weights = zeros(T, size(input_layer.weight))
@@ -289,12 +296,38 @@ mutable struct HybridEchoStateNetwork{R<:AbstractReservoir,T<:AbstractFloat} <: 
         input_layer.weight .= new_weights
 
         reservoir = create_reservoir(R, T, kwargs...)
-        output_layer = Dense(reservoir_size, output_size)
+        output_layer = Dense(reservoir_size + additional_solver_input, output_size)
         new{R, T}(input_layer, reservoir, output_layer, problem)
     end
 end
 
-function (hesn::HybridEchoStateNetwork)(input::Vector)
+function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, solver, abstol=1e-20, reltol=1e-5) where T<:AbstractFloat
+    """
+    We can't use a single step here because
+    a timestep can vary in size. To work around
+    this, we need the user to pass a target time 
+    starting from t = 0, to simulate to and we 
+    pass have the matrix of the solution. We 
+    won't know ahead of time the size of this.
+    """
+    tspan = (0., target_time)
+    prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
+    sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
+    temp_solution = hcat(sol.u...)
+    #result = zeros(T, size(sol.))
+    for i in 1:size(temp_solution, 2)
+        temp_solution[:, i] = vcat(input, temp_solution[:, i]) |> 
+                                              hesn.input_layer |> 
+                                              hesn.reservoir   |> 
+                                              x-> vcat(x, temp_solution[:, i]) |> 
+                                              hesn.output_layer
+    end
+    return temp_solution
+end
+
+
+function train!(hesn::HybridEchoStateNetwork, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01) where T<:AbstractFloat
     
 end
 
+end
