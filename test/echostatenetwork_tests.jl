@@ -180,7 +180,7 @@ include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "N
 
 rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions2.csv", "initcond0.csv", "species.csv"])
 
-tspan = (0., 10^7 * 365. * 24. * 3600.)
+tspan = (0., 10^6 * 365. * 24. * 3600.)
                       #  zeta, omega, T, F_UV, A_v, E, density
 rates_set_lower_bound = [1e-17, 0.5, 10, 1., 10., 1e2]
 rates_set_upper_bound = [9.9e-17, 0.5, 300, 1., 10., 1e6]
@@ -233,7 +233,7 @@ full .= full .|> x->log10.(x) |> x->replace(x, -Inf=>0.)
 X = full .|> x->replace(x[:, begin:end-1], -Inf=>0.0)
 y = full .|> x->replace(x[rates_length+1:end, 2:end], -Inf=>0.0)
 
-
+Random.seed!(0)
 function test_small_network(alpha, beta, sigma, radius)
     esn = ESN.EchoStateNetwork{Float64}(size(X[begin],1), 600, length(train[begin].species) + 1, sigma, radius, alpha);
 
@@ -277,7 +277,7 @@ for a in .1:.2:1.0
 end
 
 
-function test_small_network(alpha, beta, sigma, radius)
+function test_small_network_deep(alpha, beta, sigma, radius)
     desn = ESN.DeepEchoStateNetwork{Float64}(size(X[begin],1), 100, 10, length(train[begin].species) + 1, sigma, radius, alpha);
 
     ESN.train!(desn, X[begin:end-1], y[begin:end-1], beta)
