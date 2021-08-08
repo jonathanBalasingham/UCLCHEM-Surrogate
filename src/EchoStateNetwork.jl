@@ -35,7 +35,7 @@ mutable struct EchoStateReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
 end
 
 
-mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
+mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     """
     """
     weight::Matrix{T}
@@ -43,7 +43,7 @@ mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     f::Function
     state::Vector{T}
     α::T
-    function SimpleCyclicReservoir{T}(reservoir_size::Int, c::T, feedback::T=0.0; activation=tanh, α=1.0) where T<:AbstractFloat
+    function DelayLineReservoir{T}(reservoir_size::Int, c::T, feedback::T=0.0; activation=tanh, α=1.0, bias=false) where T<:AbstractFloat
         W = zeros(T, reservoir_size, reservoir_size)
         for i in 2:reservoir_size W[i, i-1] = c end 
         if feedback != 0 
@@ -53,7 +53,7 @@ mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     end
 end
 
-mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
+mutable struct SimpleCyclicReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     """
     """
     weight::Matrix{T}
@@ -61,7 +61,7 @@ mutable struct DelayLineReservoir{T<:AbstractFloat} <: AbstractReservoir{T}
     f::Function
     state::Vector{T}
     α::T
-    function DelayLineReservoir{T}(reservoir_size::Int, c::T; activation=tanh, α=1.0) where T<:AbstractFloat
+    function SimpleCyclicReservoir{T}(reservoir_size::Int, c::T; activation=tanh, α=1.0, bias=false) where T<:AbstractFloat
         W = zeros(T, reservoir_size, reservoir_size)
         for i in 2:reservoir_size W[i, i-1] = c end 
         W[begin, end] = c
@@ -89,19 +89,19 @@ function Base.show(io::IO, res::EchoStateReservoir{T}) where T<:AbstractFloat
 end
 
 
-function create_reservoir(res_type::DataType, float::DataType, kwargs...)
+function create_reservoir(res_type::UnionAll, float::DataType; kwargs...)
     if res_type == EchoStateReservoir
-        EchoStateReservoir{float}(kwargs[:size], :sparsity in kwargs ? kwargs[:sparsity] : .3, 
-                                 :spectral_radius in kwargs ? kwargs[:spectral_radius] : 1.0,
-                                 :α in kwargs ? kwargs[:α] : 1.0)
+        EchoStateReservoir{float}(kwargs[:size], :sparsity in keys(kwargs) ? kwargs[:sparsity] : .3, 
+                                 :spectral_radius in keys(kwargs) ? kwargs[:spectral_radius] : 1.0,
+                                 :α in keys(kwargs) ? kwargs[:α] : 1.0)
     elseif res_type == SimpleCyclicReservoir
-        SimpleCyclicReservoir{float}(kwargs[:size], kwargs[:c], kwargs[:feedback],
-                                    :activation in kwargs ? kwargs[:activation] : tanh,
-                                    :α in kwargs ? kwargs[:α] : 1.0)
+        SimpleCyclicReservoir{float}(kwargs[:size], kwargs[:c], 
+                                    activation=:activation in keys(kwargs) ? kwargs[:activation] : tanh,
+                                    α=:α in keys(kwargs) ? kwargs[:α] : 1.0)
     elseif res_type == DelayLineReservoir
-        DelayLineReservoir{float}(kwargs[:size], kwargs[:c], 
-                                 :activation in kwargs ? kwargs[:activation] : tanh,
-                                 :α in kwargs ? kwargs[:α] : 1.0)
+        DelayLineReservoir{float}(kwargs[:size], kwargs[:c], :feedback in keys(kwargs) ? kwargs[:feedback] : 0.0,
+                                 activation=:activation in keys(kwargs) ? kwargs[:activation] : tanh,
+                                 α=:α in keys(kwargs) ? kwargs[:α] : 1.0)
     end
 end
 
@@ -326,7 +326,7 @@ function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, 
 end
 
 
-function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T})
+function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
     tspan = (0., target_time)
     prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
     sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
