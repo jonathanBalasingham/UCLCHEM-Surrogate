@@ -313,7 +313,7 @@ function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, 
     tspan = (0., target_time)
     prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
     sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
-    temp_solution = hcat(sol.u...)
+    temp_solution = sol.u[end]
     #result = zeros(T, size(sol.))
     for i in 1:size(temp_solution, 2)
         temp_solution[:, i] = vcat(input, temp_solution[:, i]) |> 
@@ -330,13 +330,14 @@ function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T})
     tspan = (0., target_time)
     prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
     sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
-    temp_solution = hcat(sol.u...)
+    temp_solution = sol.u[end]
     #result = zeros(T, size(sol.))
-    for i in 1:size(temp_solution, 2)
-        temp_solution[:, i] = vcat(input, temp_solution[:, i]) |> 
-                                              hesn.input_layer |> 
-                                              hesn.reservoir   |> 
-                                              x-> vcat(x, temp_solution[:, i])
+    temp_solution = vcat(input, temp_solution[:, i]) |> 
+                                    hesn.input_layer |> 
+                                    hesn.reservoir   |> 
+                                    x-> vcat(x, temp_solution)
+    for i in size(train, 2)
+
     end
 end
 

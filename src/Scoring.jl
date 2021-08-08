@@ -55,7 +55,8 @@ function retroactive_loss(prediction::Matrix, prob, solver; loss=Flux.Losses.mae
     prediction matrix.
     """
     saveat = prediction[begin, :]
-    sol = solve(prob, saveat, solver=solver())
-    true_solution = hcat(sol.u...)
-    loss(true_solution, prediction[2:end, :])
+    sol = solve(prob, saveat, solver=solver)
+    true_solution = hcat(sol.u...) |> x -> (x .- minimum(x)) ./ (maximum(x) - minimum(x))
+    true_solution = eachcol(true_solution) .|> x->x ./ sum(abs.(x))
+    loss(hcat(true_solution...), prediction[2:end, :])
 end
