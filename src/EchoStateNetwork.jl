@@ -91,9 +91,9 @@ end
 
 function create_reservoir(res_type::UnionAll, float::DataType; kwargs...)
     if res_type == EchoStateReservoir
-        EchoStateReservoir{float}(kwargs[:size], :sparsity in keys(kwargs) ? kwargs[:sparsity] : .3, 
-                                 :spectral_radius in keys(kwargs) ? kwargs[:spectral_radius] : 1.0,
-                                 :α in keys(kwargs) ? kwargs[:α] : 1.0)
+        EchoStateReservoir{float}(kwargs[:size], sparsity=:sparsity in keys(kwargs) ? kwargs[:sparsity] : .3, 
+                                 spectral_radius=:spectral_radius in keys(kwargs) ? kwargs[:spectral_radius] : 1.0,
+                                 α=:α in keys(kwargs) ? kwargs[:α] : 1.0)
     elseif res_type == SimpleCyclicReservoir
         SimpleCyclicReservoir{float}(kwargs[:size], kwargs[:c], 
                                     activation=:activation in keys(kwargs) ? kwargs[:activation] : tanh,
