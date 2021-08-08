@@ -301,7 +301,7 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
     end
 end
 
-function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, solver, abstol=1e-20, reltol=1e-5) where T<:AbstractFloat
+function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, solver; abstol=1e-17, reltol=1e-5) where T<:AbstractFloat
     """
     We can't use a single step here because
     a timestep can vary in size. To work around
@@ -326,8 +326,19 @@ function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, 
 end
 
 
-function train!(hesn::HybridEchoStateNetwork, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01) where T<:AbstractFloat
-    
+function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T})
+    tspan = (0., target_time)
+    prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
+    sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
+    temp_solution = hcat(sol.u...)
+    #result = zeros(T, size(sol.))
+    for i in 1:size(temp_solution, 2)
+        temp_solution[:, i] = vcat(input, temp_solution[:, i]) |> 
+                                              hesn.input_layer |> 
+                                              hesn.reservoir   |> 
+                                              x-> vcat(x, temp_solution[:, i])
+    end
 end
+
 
 end

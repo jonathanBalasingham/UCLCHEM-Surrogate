@@ -113,3 +113,10 @@ function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365.
     cnp = ChemicalNetworkProblem(sys, species_name, u0, tspan, rates)
     return cnp
 end
+
+function get_rates(rfp::AbstractString, p)
+    reactions_data = read_in_reactions(rfp)
+    calculateRates!(reactions_data, p)
+    rates = reactions_data[!, end]
+    rates
+end
