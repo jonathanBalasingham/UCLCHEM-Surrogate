@@ -327,18 +327,18 @@ end
 
 
 function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
-    tspan = (0., target_time)
-    prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
-    sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
-    temp_solution = sol.u[end]
-    #result = zeros(T, size(sol.))
-    temp_solution = vcat(input, temp_solution[:, i]) |> 
-                                    hesn.input_layer |> 
-                                    hesn.reservoir   |> 
-                                    x-> vcat(x, temp_solution)
+    states = T[]
     for i in size(train, 2)
-
+        tspan = (0., target_time)
+        prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
+        sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
+        temp_solution = sol.u[end]
+        states = hcat(states, vcat(train[:, i], temp_solution[:, i]) |> 
+                                        hesn.input_layer |> 
+                                        hesn.reservoir   |> 
+                                        x-> vcat(x, temp_solution[:, i]))
     end
+    return states
 end
 
 
