@@ -16,7 +16,7 @@ function solve(prob::ChemicalNetworkProblem;
     u = Float64[]
     t = Float64[]
     year_1000 = 1000. * 3600. * 24. * 365.
-    current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time))
+    current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
 
     @async p = ProgressThresh(prob.tspan[2], 0)
 
@@ -48,7 +48,7 @@ function solve(prob::ChemicalNetworkProblem,
     u = Float64[]
     t = Float64[]
     year_1000 = 1000. * 3600. * 24. * 365.
-    current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time))
+    current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
 
     @async p = ProgressThresh(prob.tspan[2], 0)
 
@@ -89,7 +89,7 @@ function solve(prob::ChemicalNetworkProblem,
     year_1000 = 1000. * 3600. * 24. * 365.
     time_factor_pre_1000_years = 10.
     time_factor_post_1000_years = 1.1
-    current_problem = ODEProblem(prob.network, prob.u0, (current_time, target_time))
+    current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
     year_in_secs = 3600 * 24 * 365
 
     open(filepath, "a") do io
