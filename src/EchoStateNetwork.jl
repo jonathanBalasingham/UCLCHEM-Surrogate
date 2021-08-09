@@ -279,10 +279,12 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
     reservoir::R
     output_layer::Dense
     prob::ODEProblem
+    _integrator
     function HybridEchoStateNetwork{R, T}(input_size::I,
                                         reservoir_size::I,
                                         output_size::I,
                                         problem::ODEProblem,
+                                        solver=CVODE_BDF,
                                         σ = .5;
                                         input_activation=identity, 
                                         output_activation=identity,
@@ -296,12 +298,12 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
         input_layer.weight .= new_weights
 
         reservoir = create_reservoir(R, T, kwargs...)
-        output_layer = Dense(reservoir_size + additional_solver_input, output_size)
+        output_layer = Dense(reservoir_size + additional_solver_input, output_size, output_activation)
         new{R, T}(input_layer, reservoir, output_layer, problem)
     end
 end
 
-function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, solver; abstol=1e-17, reltol=1e-5) where T<:AbstractFloat
+function (hesn::HybridEchoStateNetwork)(input::Vector{T}; abstol=1e-17, reltol=1e-5) where T<:AbstractFloat
     """
     We can't use a single step here because
     a timestep can vary in size. To work around
@@ -310,33 +312,30 @@ function (hesn::HybridEchoStateNetwork)(input::Vector{T}, target_time::Float64, 
     pass have the matrix of the solution. We 
     won't know ahead of time the size of this.
     """
-    tspan = (0., target_time)
-    prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
-    sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
-    temp_solution = sol.u[end]
-    #result = zeros(T, size(sol.))
-    for i in 1:size(temp_solution, 2)
-        temp_solution[:, i] = vcat(input, temp_solution[:, i]) |> 
-                                              hesn.input_layer |> 
-                                              hesn.reservoir   |> 
-                                              x-> vcat(x, temp_solution[:, i]) |> 
-                                              hesn.output_layer
-    end
-    return temp_solution
+    hesn._integrator.opts.abstol = abstol
+    hesn._integrator.opts.reltol = reltol
+    step!(hesn._integrator)
+    temp_solution = hesn._integrator.u
+
+    vcat(input, temp_solution) |> 
+              hesn.input_layer |> 
+              hesn.reservoir   |> 
+              x-> vcat(x, temp_solution) |> 
+              hesn.output_layer    
 end
 
 
 function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
     states = T[]
     for i in size(train, 2)
-        tspan = (0., target_time)
-        prob = remake(hesn.prob, tspan=tspan, u0=input[end-length(prob.u0)+1:end])
-        sol = solve(prob, solver(), abstol=abstol, reltol=reltol)
-        temp_solution = sol.u[end]
-        states = hcat(states, vcat(train[:, i], temp_solution[:, i]) |> 
-                                        hesn.input_layer |> 
-                                        hesn.reservoir   |> 
-                                        x-> vcat(x, temp_solution[:, i]))
+        step!(hesn._integrator)
+        temp_solution = hesn._integrator.u
+    
+        ns = vcat(input, temp_solution) |> 
+                  hesn.input_layer |> 
+                  hesn.reservoir   |> 
+                  x-> vcat(x, temp_solution)
+        states = hcat(states, ns)
     end
     return states
 end
