@@ -225,7 +225,6 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T,
         esn.output_layer.weight .= (_y*res_output') * inv(term2)
     elseif esn.output_layer isa Chain
         @info "Readout is an MLP, using iterative optimization."
-        loss(x, y) = Flux.Losses.mse(esn.output_layer(x), y)
         ps = Flux.params(esn.output_layer)
         data = zip(eachcol(res_output), eachcol(_y)) |> collect
         @info "Starting loss $(loss(data[begin][1], data[begin][2]))"
