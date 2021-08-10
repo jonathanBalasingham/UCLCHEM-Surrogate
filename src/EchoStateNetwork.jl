@@ -207,7 +207,8 @@ function get_states!(desn::DeepEchoStateNetwork, train::Matrix{T}) where T<:Abst
 end
 
 
-function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T, 3}, β=0.01) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T, 3}, β=0.01;
+                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y)) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     let x_size = size(X), y_size = size(y)
         x_size[2] == y_size[2] || @error "X and y do not have the same size of series: $((x_size[2], y_size[2]))"
         x_size[3] == y_size[3] || @error "X and y do not have the same number of sets: $((x_size[3], y_size[3]))"
@@ -217,12 +218,24 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T,
     reset!(esn)
     res_output = hcat([get_states!(esn, X[:,:,i]) for i in 1:size(X,3)]'...)
     _y = reshape(y, size(y, 1), :)
-    term2 = (res_output*res_output') 
-    for i in 1:size(term2, 2) term2[i,i] += β end
-    esn.output_layer.weight .= (_y*res_output') * inv(term2)
+
+    if esn.output_layer isa Dense
+        term2 = (res_output*res_output') 
+        for i in 1:size(term2, 2) term2[i,i] += β end
+        esn.output_layer.weight .= (_y*res_output') * inv(term2)
+    elseif esn.output_layer isa Chain
+        @info "Readout is an MLP, using iterative optimization."
+        loss(x, y) = Flux.Losses.mse(esn.output_layer(x), y)
+        ps = Flux.params(esn.output_layer)
+        data = zip(eachcol(res_output), eachcol(_y)) |> collect
+        @info "Starting loss $(loss(data[begin][1], data[begin][2]))"
+        @epochs epochs Flux.train!(loss, ps, data, opt)
+        @info "Ending loss $(loss(data[begin][1], data[begin][2]))"
+    end
 end
 
-function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01; opt=ADAM(0.1), epochs=10) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01; 
+                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y)) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     length(X) == length(y) || @error "X and y do not have the same size of series: $((length(X), length(y)))"
     for i in 1:length(X)
         x_size = size(X[i])
@@ -242,7 +255,6 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Ve
         esn.output_layer.weight .= (_y*res_output') * inv(term2)
     elseif esn.output_layer isa Chain
         @info "Readout is an MLP, using iterative optimization."
-        loss(x, y) = Flux.Losses.mse(esn.output_layer(x), y)
         ps = Flux.params(esn.output_layer)
         data = zip(eachcol(res_output), eachcol(_y)) |> collect
         @info "Starting loss $(loss(data[begin][1], data[begin][2]))"
