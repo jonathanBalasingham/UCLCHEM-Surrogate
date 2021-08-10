@@ -48,15 +48,20 @@ function perc_roc(truth::T, pred::T) where {T <: Vector}
 end
 
 import Flux
+findnearest(A::Vector,t) = findmin(abs.(A .- t))[2]
+
 
 function retroactive_loss(prediction::Matrix, prob, solver; loss=Flux.Losses.mae)
     """
     Prediction for time is in the top row of the 
     prediction matrix.
     """
-    saveat = prediction[begin, :]
+
+    saveat = 10 .^ prediction[begin, :]
     sol = solve(prob, saveat, solver=solver)
-    true_solution = hcat(sol.u...) |> x -> (x .- minimum(x)) ./ (maximum(x) - minimum(x))
+    inds = saveat .|> x->findnearest(sol.t, x)
+    true_solution = hcat(sol.u[inds]...) |> x -> (x .- minimum(x)) ./ (maximum(x) - minimum(x))
     true_solution = eachcol(true_solution) .|> x->x ./ sum(abs.(x))
-    loss(hcat(true_solution...), prediction[2:end, :])
+    
+    loss(hcat(true_solution...), prediction[2:end, :]) / size(true_solution, 2)
 end

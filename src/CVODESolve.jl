@@ -51,7 +51,6 @@ function solve(prob::ChemicalNetworkProblem,
     current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time))
 
     @async p = ProgressThresh(prob.tspan[2], 0)
-
     sub_saveat = filter(x -> x < target_time && x > current_time, saveat)
     while current_time <= prob.tspan[2]
         sol = DifferentialEquations.solve(current_problem, 
