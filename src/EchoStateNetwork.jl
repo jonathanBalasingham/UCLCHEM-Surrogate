@@ -1,5 +1,6 @@
 module ESN
 
+using Distributions: length
 using SparseArrays, LinearAlgebra
 import Base.:*
 using Flux
@@ -280,7 +281,7 @@ end
 function predict!(esn::AbstractEchoStateNetwork{T, R}, warmup::Matrix{T}, steps::Integer; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     prediction = ESN.predict!(esn, warmup)[:, end] # warmup the reservoir
     for i in 1:steps
-        prediction = hcat(prediction, esn(vcat(X[1:3, i], prediction[:, end])))
+        prediction = hcat(prediction, esn(prediction[:, end]))
     end
     prediction
 end
@@ -404,5 +405,65 @@ function reset!(hesn::HybridEchoStateNetwork)
     hesn._integrator.opts.abstol = abstol
     hesn._integrator.opts.reltol = reltol
 end
+
+mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} <: AbstractEchoStateNetwork{T, R}
+    input_layers::Vector{Dense}
+    reservoirs::Vector{R}
+    output_layer::Dense
+    function SplitEchoStateNetwork{T, R}(input_sizes::Tuple, 
+                                         reservoir_sizes::Tuple, 
+                                         output_size,
+                                         σ=0.5; 
+                                         input_activation=tanh, 
+                                         input_sparsity = 0.3,
+                                         output_activation=identity,
+                                         kwargs...) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+        length(input_sizes) == length(reservoir_sizes) || @error "Input and Reservoir sizes must have equal length"
+        f = T == Float32 ? f32 : f64
+        inp = Dense[f(Dense(input_sizes[i], reservoir_sizes[i], input_activation, init=Flux.sparse_init(sparsity=input_sparsity))) for i in 1:length(input_sizes)]
+        for i in inp i.weight .*= σ end
+        res = R[create_reservoir(R, T, reservoir_sizes[i]; kwargs...) for i in 1:length(reservoir_sizes)]
+        state_output_size = sum(reservoir_sizes)
+        out = f(Dense(state_output_size, output_size, output_activation))
+        new{T, R}(inp, res, out)
+    end
+end
+
+inputdim(sesn::SplitEchoStateNetwork; split=false) = 
+    if split 
+        [size(d.weight, 2) for d in sesn.input_layers] 
+    else 
+        sum([size(d.weight, 2) for d in sesn.input_layers]) 
+    end
+
+function (sesn::SplitEchoStateNetwork)(input::AbstractArray)
+    """
+
+    """
+    input_sizes = inputdim(sesn, split=true)    
+    end_inds = [0, cumsum(input_sizes)...]
+    [input[end_inds[i]+1:end_inds[i+1]] for (i,j) in enumerate(input_sizes)] .|> 
+                                                           sesn.input_layers .|>
+                                                              sesn.reservoirs |> 
+                                                                x->vcat(x...) |> 
+                                                              sesn.output_layer
+end
+
+function get_states!(sesn::SplitEchoStateNetwork{T}, train::Matrix{T}) where T<:AbstractFloat
+    input_sizes = [size(d.weight, 2) for d in sesn.input_layers]
+    
+    end_inds = [0, cumsum(input_sizes)...]
+
+    states = eachcol(train) .|> input -> begin
+        [input[end_inds[i]+1:end_inds[i+1]] for (i,j) in enumerate(input_sizes)] .|> 
+                                                            sesn.input_layers .|>
+                                                                sesn.reservoirs |> 
+                                                                x->vcat(x...)
+    end
+    hcat(states...)' |> Matrix
+end
+
+reset!(sesn::SplitEchoStateNetwork) = for res in sesn.reservoirs reset!(res) end
+
 
 end
