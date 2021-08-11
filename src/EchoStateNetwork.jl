@@ -4,9 +4,12 @@ using SparseArrays, LinearAlgebra
 import Base.:*
 using Flux
 using Flux: @epochs
+using Flux.Data
+
 using Distributions
 import DiffEqBase: ODEProblem
 using DifferentialEquations
+using IterTools: ncycle 
 
 abstract type AbstractEchoStateNetwork{T, R} end
 abstract type AbstractReservoir{T} end
@@ -234,7 +237,7 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T,
 end
 
 function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01; 
-                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y)) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y), use_gpu=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     length(X) == length(y) || @error "X and y do not have the same size of series: $((length(X), length(y)))"
     for i in 1:length(X)
         x_size = size(X[i])
@@ -254,11 +257,17 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Ve
         esn.output_layer.weight .= (_y*res_output') * inv(term2)
     elseif esn.output_layer isa Chain
         @info "Readout is an MLP, using iterative optimization."
+        if use_gpu esn.output_layer |> gpu end
         ps = Flux.params(esn.output_layer)
-        data = zip(eachcol(res_output), eachcol(_y)) |> collect
-        @info "Starting loss $(loss(data[begin][1], data[begin][2]))"
-        @epochs epochs Flux.train!(loss, ps, data, opt)
-        @info "Ending loss $(loss(data[begin][1], data[begin][2]))"
+        full_data = zip(eachcol(res_output), eachcol(_y)) |> collect
+        total_loss = sum([loss(x, y) for (x,y) in full_data])
+        @info "Starting loss $total_loss"
+        train_loader = DataLoader(full_data, batchsize=500, shuffle=true)
+        for data in train_loader
+            @epochs epochs Flux.train!(loss, ps, ncycle(data, 5), opt)
+        end
+        total_loss = sum([loss(x, y) for (x,y) in full_data])
+        @info "Ending loss $total_loss"
     end
 end
 
