@@ -277,6 +277,14 @@ function predict!(esn::AbstractEchoStateNetwork{T, R}, input::Matrix{T}; clear_s
     hcat([esn(d) for d in eachcol(input)]...)
 end
 
+function predict!(esn::AbstractEchoStateNetwork{T, R}, warmup::Matrix{T}, steps::Integer; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+    prediction = ESN.predict!(esn, warmup)[:, end] # warmup the reservoir
+    for i in 1:steps
+        prediction = hcat(prediction, esn(vcat(X[1:3, i], prediction[:, end])))
+    end
+    prediction
+end
+
 function predict!(esn::EchoStateNetwork{T, R}, xt::Matrix{T}, st::Matrix{T}; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     size(xt, 1) + size(st, 1) == inputdim(esn) || @error "Dimension of X(t) plus S(t) must be equal to the input dimension of the ESN"
     size(xt,2) >= size(st, 2) && begin @warn "length of X(t) is less than or equal to length of S(t), no prediction will be done"; return end
@@ -312,12 +320,13 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
     output_layer::Union{Dense, Chain}
     prob::ODEProblem
     _integrator
-    t
+    dt::T
     function HybridEchoStateNetwork{T, R}(input_size::I,
                                         reservoir_size::I,
                                         output_size::I,
                                         problem::ODEProblem,
                                         solver,
+                                        dt,
                                         σ = .5;
                                         abstol = 1e-5,
                                         reltol=1e-3,
@@ -342,7 +351,7 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
         intg = init(problem, solver())
         intg.opts.abstol = abstol
         intg.opts.reltol = reltol
-        new{T, R}(input_layer, reservoir, output_layer, problem, intg, [0.])
+        new{T, R}(input_layer, reservoir, output_layer, problem, intg, dt)
     end
 end
 
@@ -359,9 +368,9 @@ function (hesn::HybridEchoStateNetwork)(input::AbstractArray)
     """
     hesn.prob.u0 .= input
     hesn._integrator = init(hesn.prob, hesn._integrator.alg)
-    step!(hesn._integrator)
+    step!(hesn._integrator, hesn.dt)
     temp_solution = hesn._integrator.u
-    append!(hesn.t, hesn.t[end] + hesn._integrator.t)
+    #append!(hesn.t, hesn.t[end] + hesn._integrator.t)
     vcat(input, temp_solution) |> 
               hesn.input_layer |> 
               hesn.reservoir   |> 
