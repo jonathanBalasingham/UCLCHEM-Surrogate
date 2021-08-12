@@ -286,7 +286,7 @@ function predict!(esn::AbstractEchoStateNetwork{T, R}, warmup::Matrix{T}, steps:
     prediction
 end
 
-function predict!(esn::EchoStateNetwork{T, R}, xt::Matrix{T}, st::Matrix{T}; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function predict!(esn::AbstractEchoStateNetwork{T, R}, xt::Matrix{T}, st::Matrix{T}; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
     size(xt, 1) + size(st, 1) == inputdim(esn) || @error "Dimension of X(t) plus S(t) must be equal to the input dimension of the ESN"
     size(xt,2) >= size(st, 2) && begin @warn "length of X(t) is less than or equal to length of S(t), no prediction will be done"; return end
     warmup_size = size(xt, 2)

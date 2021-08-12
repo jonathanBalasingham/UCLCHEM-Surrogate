@@ -1,7 +1,7 @@
-using Surrogates: Sobol
-using Base: Float64
 using DrWatson
 @quickactivate "UCLCHEM Surrogate"
+
+using Surrogates
 
 include(srcdir("EchoStateNetwork.jl"))
 
@@ -20,26 +20,48 @@ rates = [0.04,3e7,1e4]
 u0 = [1.0,1e-30,1e-30]
 tspan = (0., 1e5)
 prob = ODEProblem(rober, u0, tspan, rates)
-sol = solve(prob)
+sol = solve(prob, CVODE_BDF(), abstol=1e-16, reltol=1e-10)
+high_error_sol = solve(prob, CVODE_BDF(), abstol=1e-6, reltol=1e-4)
 train = hcat(sol.u...)
+high_error_train = hcat(high_error_sol.u...)
 rates_t = repeat(rates, length(sol.t)) |> x->reshape(x, length(rates), :)
 
 X = train[:, 1:end-1]
+high_error_X = high_error_train[:, 1:end-1]
 y = train[:, 2:end]
 
 """
 Simple Test of fit on the Robertson Problem
 """
-esn = ESN.EchoStateNetwork{Float64}(3,1000,3);
-desn = ESN.DeepEchoStateNetwork{Float64}(3, 200, 6,3);
+# ESR
+esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(3,300,3);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(3, 50, 6,3);
+
+# SCR
+esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(3,300,3);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(3, 50, 6,3);
+
+# DLR
+esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3,300,3);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3, 50, 6,3);
+
+# DLR w/F
+esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3,300,3);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3, 50, 6,3);
+
+
+hesn = ESN.HybridEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(3,250,3,prob, CVODE_BDF, abstol=1e-6, reltol=1e-4)
+
 ESN.train!(esn, [X], [y], 1e-4)
 ESN.train!(desn, [X], [y], 1e-4)
-
+ESN.train!(hesn, [X], [y], 1e-4)
 
 startup = 70
-plot(sol.t[2:startup], X[:, 2:startup]', xscale=:log10, label="ground truth", layout=3)
-plot!(sol.t[2:startup], ESN.predict!(esn, X[:, 1:startup-1])', xscale=:log10, label="CTESN", layout=3)
-plot!(sol.t[2:startup], ESN.predict!(desn, X[:, 1:startup-1])', xscale=:log10, label="DeepCTESN", layout=3)
+plot(sol.t[2:end-1], X[:, 2:end]', xscale=:log10, label="GT", layout=3)
+plot!(high_error_sol.t[2:end-1], high_error_X[:, 2:end]', xscale=:log10, label="HE GT", layout=3)
+#plot!(sol.t[2:startup], ESN.predict!(esn, X[:, 1:startup-1])', xscale=:log10, label="CTESN", layout=3)
+#plot!(sol.t[2:startup], ESN.predict!(desn, X[:, 1:startup-1])', xscale=:log10, label="DeepCTESN", layout=3)
+plot!(high_error_sol.t[2:end-1], ESN.predict!(hesn, high_error_X[:, 1:end-1])', xscale=:log10, label="HESN", layout=3)
 
 """
 Simple Prediction test w/ startup on the Robertson Problem 
@@ -61,6 +83,20 @@ for i in 1:pred_length
     prediction2 = hcat(prediction2, desn(prediction[:, end]))
 end
 
+
+startup = 30
+pred_length = length(high_error_sol.t) - startup - 1
+prediction3 = ESN.predict!(hesn, X[:, 1:startup])[:, end] # warmup the reservoir
+while hesn.t[end] < tspan[2]
+    prediction3 = hcat(prediction3, hesn(prediction3[:, end]))
+end
+
+
+plot(sol.t[2:end-1], X[:, 2:end]', xscale=:log10, label="GT", layout=3)
+plot!(high_error_sol.t[2:end-1], high_error_X[:, 2:end]', xscale=:log10, label="HE GT", layout=3)
+plot!(high_error_sol.t[2:end-1], prediction3', xscale=:log10, label="HE GT", layout=3)
+
+
 plot(sol.t[startup+1:end], y[:, startup:end]', xscale=:log10, label="ground truth", layout=3)
 plot!(sol.t[startup+1:end], prediction', xscale=:log10, label="CTESN", layout=3)
 plot!(sol.t[startup+1:end], prediction2', xscale=:log10, label="DeepCTESN", layout=3)
@@ -73,9 +109,9 @@ species_and_rates = vcat(rates_t, sol.t', train) |> x->log10.(x .+ 1e-30)
 X = species_and_rates[:, 1:end-1]
 y = species_and_rates[4:7, 2:end]
 
-esn = ESN.EchoStateNetwork{Float64}(7,500,4);
-desn = ESN.DeepEchoStateNetwork{Float64}(7, 50, 10, 4, .6, 1.0, .5);
-ESN.train!(esn, [X], [y], 5e-4)
+esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(7,500,4;c=.7);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(7, 50, 10, 4; c=.7);
+ESN.train!(esn, [X], [y], 5e-3)
 ESN.train!(desn, [X], [y], 7e-4)
 
 startup = 30
