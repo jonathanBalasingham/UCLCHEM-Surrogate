@@ -414,7 +414,7 @@ mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} 
                                          reservoir_sizes::Tuple, 
                                          output_size,
                                          σ=0.5; 
-                                         input_activation=tanh, 
+                                         input_activation=identity, 
                                          input_sparsity = 0.3,
                                          output_activation=identity,
                                          kwargs...) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
