@@ -110,6 +110,16 @@ function create_reservoir(res_type::DataType, float::DataType, size::Integer; kw
     end
 end
 
+function simple_layer!(d::Dense, v::T) where T <: AbstractFloat
+    values = [-v, v]
+    dist = Binomial(1, .5)
+    for i in 1:size(d.weight,1)
+        for j in 1:size(d.weight, 2) 
+            d.weight[i,j] = values[rand(dist, 1)[begin] + 1] 
+        end
+    end
+end
+
 #=
 This could be changed to a Flux Chain, but I need to figure out
 a way to make the reservoir to behave recurrently instead of as 
@@ -143,6 +153,9 @@ function EchoStateNetwork{T, R}(input_size::I,
     f = T == Float32 ? f32 : f64
     inp = Dense(input_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=input_sparsity))
     inp.weight .*= σ
+    if !(R <: EchoStateReservoir)  
+        simple_layer!(inp, σ)
+    end
     res = create_reservoir(R, T, reservoir_size; kwargs...)
     out = f(Dense(reservoir_size, output_size, output_activation))
     EchoStateNetwork{T, R}(f(inp), res, out)
@@ -174,6 +187,11 @@ function DeepEchoStateNetwork{T, R}(input_size::I,
     f = T == Float32 ? f32 : f64
     inp = Dense[f(Dense(i == 1 ? input_size : reservoir_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=input_sparsity))) for i in 1:layers]
     for i in inp i.weight .*= σ end
+    if !(R <: EchoStateReservoir)  
+        for i in inp simple_layer!(i, σ) end
+    else
+        for i in inp i.weight .*= σ end
+    end
     res = R[create_reservoir(R, T, reservoir_size; kwargs...) for i in 1:layers]
     out = f(Dense(reservoir_size*layers, output_size, output_activation))
     DeepEchoStateNetwork(inp, res, out)
@@ -421,7 +439,11 @@ mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} 
         length(input_sizes) == length(reservoir_sizes) || @error "Input and Reservoir sizes must have equal length"
         f = T == Float32 ? f32 : f64
         inp = Dense[f(Dense(input_sizes[i], reservoir_sizes[i], input_activation, init=Flux.sparse_init(sparsity=input_sparsity))) for i in 1:length(input_sizes)]
-        for i in inp i.weight .*= σ end
+        if !(R <: EchoStateReservoir)  
+            for i in inp simple_layer!.(i, σ) end
+        else
+            for i in inp i.weight .*= σ end
+        end
         res = R[create_reservoir(R, T, reservoir_sizes[i]; kwargs...) for i in 1:length(reservoir_sizes)]
         state_output_size = sum(reservoir_sizes)
         out = f(Dense(state_output_size, output_size, output_activation))
