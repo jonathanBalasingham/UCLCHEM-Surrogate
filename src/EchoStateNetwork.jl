@@ -345,10 +345,10 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
                                         output_size::I,
                                         problem::ODEProblem,
                                         solver,
-                                        dt,
+                                        dt::T,
                                         σ = .5;
-                                        abstol = 1e-5,
-                                        reltol=1e-3,
+                                        abstol::T=1e-5,
+                                        reltol::T=1e-3,
                                         input_activation=identity, 
                                         output_activation=identity,
                                         kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
@@ -383,11 +383,9 @@ function (hesn::HybridEchoStateNetwork)(input::AbstractArray)
     this, we need the user to pass a target time 
     starting from t = 0, to simulate to and we 
     pass have the matrix of the solution. We 
-    won't know ahead of time the size of this.
+    won't know ahead of time the size of this. stop_at_tdt
     """
-    hesn.prob.u0 .= input
-    hesn._integrator = init(hesn.prob, hesn._integrator.alg)
-    step!(hesn._integrator, hesn.dt)
+    step!(hesn._integrator, hesn.dt, true)
     temp_solution = hesn._integrator.u
     #append!(hesn.t, hesn.t[end] + hesn._integrator.t)
     vcat(input, temp_solution) |> 
@@ -401,15 +399,13 @@ end
 function get_states!(hesn::HybridEchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
     states = T[]
     for i in 1:size(train, 2)
-        hesn.prob.u0 .= train[:, i]
-        hesn._integrator = init(hesn.prob, hesn._integrator.alg)
-        step!(hesn._integrator)
+        step!(hesn._integrator, hesn.dt, true)
         temp_solution = hesn._integrator.u
-    
+
         ns = vcat(train[:, i], temp_solution) |> 
                   hesn.input_layer |> 
                   hesn.reservoir   |> 
-                  x->vcat(x, temp_solution)
+                  x-> vcat(x, temp_solution)
         if isempty(states) states = ns else states = hcat(states, ns) end
     end
     return Matrix(states')
