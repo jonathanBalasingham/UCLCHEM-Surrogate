@@ -21,7 +21,7 @@ function calculateRates!(rdata, parameters; include_H2=true)
     if include_H2
         h2_formation_row = DataFrame(re1="H", re2="H", re3="H2FORM", 
         prod1="H2", prod2="NaN", prod3="NaN", prod4="NaN",
-        alpha=0.0, beta=0.0, gamma=0.0, tmin=parameters.T, tmax=parameters.T)
+        alpha=0.0, beta=0.0, gamma=0.0, tmin=round(parameters.T), tmax=round(parameters.T))
         append!(rdata, h2_formation_row)
     end
 

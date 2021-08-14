@@ -85,7 +85,7 @@ EchoStateReservoir(W::Matrix{T}, b::Vector{T}, f::Function, α=1.0) where T<:Abs
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(convert(Vector{T}, input) + res.weight*res.state)
 *(res::AbstractReservoir{T}, input::Vector{V}, α=res.α) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
 
-reset!(res::R) where {R<:AbstractReservoir} = res.state .*= 0
+reset!(res::R) where {R<:AbstractReservoir} = res.state .= 0
 
 function Base.show(io::IO, res::EchoStateReservoir{T}) where T<:AbstractFloat
     sparsity  = count(x->x!=0.0, res.weight) / length(res.weight)
@@ -146,7 +146,7 @@ function EchoStateNetwork{T, R}(input_size::I,
                              reservoir_size::I, 
                              output_size::I, 
                              σ=0.5; 
-                             input_activation=tanh, 
+                             input_activation=identity, 
                              input_sparsity=.7,
                              output_activation=identity,
                              kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
@@ -440,7 +440,7 @@ mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} 
         f = T == Float32 ? f32 : f64
         inp = Dense[f(Dense(input_sizes[i], reservoir_sizes[i], input_activation, init=Flux.sparse_init(sparsity=input_sparsity))) for i in 1:length(input_sizes)]
         if !(R <: EchoStateReservoir)  
-            for i in inp simple_layer!.(i, σ) end
+            for i in inp simple_layer!(i, σ) end
         else
             for i in inp i.weight .*= σ end
         end
