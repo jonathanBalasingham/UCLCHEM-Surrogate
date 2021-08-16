@@ -129,6 +129,7 @@ mutable struct EchoStateNetwork{T<:AbstractFloat,R<:AbstractReservoir{T}} <: Abs
     input_layer::Dense
     reservoir::R
     output_layer::Union{Dense, Chain}
+    ess::Bool
     # TODO: I should change this to be uniform with the deep esn constructor
     function EchoStateNetwork{T, R}(input_layer::Dense, W::R, output_layer::Union{Dense, Chain}) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
         let input_size = size(input_layer.weight, 1), res_size = size(W.weight, 1)
@@ -136,7 +137,7 @@ mutable struct EchoStateNetwork{T<:AbstractFloat,R<:AbstractReservoir{T}} <: Abs
             input_size == res_size || @error "Incompatible input and reservoir sizes:($input_size, $res_size)
                                                          Reservoir needs size: $viable_res_size"
         end
-        new(input_layer, W, output_layer)
+        new(input_layer, W, output_layer, length(reservoir.state) != size(output_layer.weight, 2))
     end
 end
 
@@ -149,6 +150,7 @@ function EchoStateNetwork{T, R}(input_size::I,
                              input_activation=identity, 
                              input_sparsity=.7,
                              output_activation=identity,
+                             ess=false,
                              kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
     f = T == Float32 ? f32 : f64
     inp = Dense(input_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=input_sparsity))
@@ -157,8 +159,8 @@ function EchoStateNetwork{T, R}(input_size::I,
         simple_layer!(inp, σ)
     end
     res = create_reservoir(R, T, reservoir_size; kwargs...)
-    out = f(Dense(reservoir_size, output_size, output_activation))
-    EchoStateNetwork{T, R}(f(inp), res, out)
+    out = f(Dense(reservoir_size + (ess ? input_size : 0), output_size, output_activation))
+    EchoStateNetwork{T, R}(f(inp), res, out, ess)
 end
 
 mutable struct DeepEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} <: AbstractEchoStateNetwork{T, R}
@@ -352,6 +354,8 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
                                         input_activation=identity, 
                                         output_activation=identity,
                                         kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
+        f = T == Float32 ? f32 : f64
+
         additional_solver_input = length(problem.u0)
         input_layer = Dense(input_size + additional_solver_input, reservoir_size, input_activation)
 
@@ -370,7 +374,7 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
         intg = init(problem, solver())
         intg.opts.abstol = abstol
         intg.opts.reltol = reltol
-        new{T, R}(input_layer, reservoir, output_layer, problem, intg, dt)
+        new{T, R}(f(input_layer), reservoir, f(output_layer), problem, intg, dt)
     end
 end
 
@@ -443,7 +447,7 @@ mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} 
         res = R[create_reservoir(R, T, reservoir_sizes[i]; kwargs...) for i in 1:length(reservoir_sizes)]
         state_output_size = sum(reservoir_sizes)
         out = f(Dense(state_output_size, output_size, output_activation))
-        new{T, R}(inp, res, out)
+        new{T, R}(f(inp), res, f(out))
     end
 end
 

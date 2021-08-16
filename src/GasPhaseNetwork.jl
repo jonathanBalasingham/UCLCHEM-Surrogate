@@ -101,10 +101,14 @@ function create_u0(network::ReactionSystem, initial_conditions::Dict; default_va
     u0
 end
 
-function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365. * 10^7))
+function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365. * 10^7), rates=nothing)
     ics = read_in_initial_conditions(icfp)
     reactions_data = read_in_reactions(rfp)
-    calculateRates!(reactions_data, p)
+    if isnothing(rates)
+        calculateRates!(reactions_data, p)
+    else
+        reactions_data[!, "rate"] = rates
+    end
     network = create_gas_phase_network(reactions_data)
     rates = reactions_data[!, end]
     sys = formulate_ode_system(network)
