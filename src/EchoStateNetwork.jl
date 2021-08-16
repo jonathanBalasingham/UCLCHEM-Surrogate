@@ -137,7 +137,7 @@ mutable struct EchoStateNetwork{T<:AbstractFloat,R<:AbstractReservoir{T}} <: Abs
             input_size == res_size || @error "Incompatible input and reservoir sizes:($input_size, $res_size)
                                                          Reservoir needs size: $viable_res_size"
         end
-        new(input_layer, W, output_layer, length(reservoir.state) != size(output_layer.weight, 2))
+        new(input_layer, W, output_layer, length(W.state) != size(output_layer.weight, 2))
     end
 end
 
@@ -160,7 +160,7 @@ function EchoStateNetwork{T, R}(input_size::I,
     end
     res = create_reservoir(R, T, reservoir_size; kwargs...)
     out = f(Dense(reservoir_size + (ess ? input_size : 0), output_size, output_activation))
-    EchoStateNetwork{T, R}(f(inp), res, out, ess)
+    EchoStateNetwork{T, R}(f(inp), res, out)
 end
 
 mutable struct DeepEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} <: AbstractEchoStateNetwork{T, R}
@@ -202,7 +202,14 @@ end
 reset!(desn::DeepEchoStateNetwork) = for res in desn.reservoirs reset!(res) end
 
 
-(esn::EchoStateNetwork)(x::T) where T<:AbstractArray = x |> esn.input_layer |> esn.reservoir |> esn.output_layer
+function (esn::EchoStateNetwork)(x::T) where T<:AbstractArray 
+    res_output = x |> esn.input_layer |> esn.reservoir
+    if esn.ess
+        vcat(res_output,x) |> esn.output_layer
+    else
+        x |> esn.output_layer
+    end
+end
 
 stateof(esn::EchoStateNetwork) = esn.reservoir.state
 inputdim(esn::EchoStateNetwork) = size(esn.input_layer.weight, 2)
@@ -211,7 +218,11 @@ outputdim(esn::T) where T<:AbstractEchoStateNetwork = if esn.output_layer isa De
 
 
 function get_states!(esn::EchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
-    reservoir_output = [x |> esn.input_layer |> esn.reservoir for x in eachcol(train)] 
+    if esn.ess
+        reservoir_output = [x |> esn.input_layer |> esn.reservoir |> i->vcat(i,x) for x in eachcol(train)]
+    else
+        reservoir_output = [x |> esn.input_layer |> esn.reservoir for x in eachcol(train)] 
+    end
     ESN.reset!(esn)
     hcat(reservoir_output...)' |> Matrix
 end
