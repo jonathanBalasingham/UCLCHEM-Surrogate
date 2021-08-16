@@ -193,6 +193,7 @@ ESN.train!(desn, X, y, 2e-11)
 error_scr_ctesn = Float64[]
 error_scr_deep_ctesn = Float64[]
 
+i = 1
 for (x_i,y_i) in zip(X_val, y_val)
     warmup_length = 10
     warmup = x_i[:, begin:warmup_length]
@@ -203,6 +204,12 @@ for (x_i,y_i) in zip(X_val, y_val)
     pred2 = ESN.predict!(desn, xt, st) 
     push!(error_scr_ctesn, Flux.Losses.mae(pred1, y_i[:, warmup_length+1:end]))
     push!(error_scr_deep_ctesn, Flux.Losses.mae(pred2, y_i[:, warmup_length+1:end]))
+    plot(10 .^ y_i[begin, warmup_length:end], y_i[2:end, warmup_length:end]', xscale=:log10, label="GT", layout=4, legend=:outertopright)
+    plot!(10 .^ pred1[begin, :], pred1[2:end, :]', xscale=:log10, label="CTESN", layout=4)
+    plot!(10 .^ pred2[begin, :], pred2[2:end, :]', xscale=:log10, label="DeepCTESN", layout=4)
+
+    savefig(projectdir("images", "MS_SR", "MS_SR_TC_prediction_RP_SCR_$i.png"))
+    i += 1
 end
 
 # DLR
