@@ -10,41 +10,77 @@ using DifferentialEquations, Plots, Sundials
 using Random
 Random.seed!(0)
 
-function rober(du,u,p,t)
-    y₁,y₂,y₃ = u
-    k₁,k₂,k₃ = p
-    du[1] = -k₁*y₁+k₃*y₂*y₃
-    du[2] =  k₁*y₁-k₂*y₂^2-k₃*y₂*y₃
-    du[3] =  k₂*y₂^2
-    nothing
+include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "NetworkSurrogate.jl"]))
+
+rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
+
+
+tspan = (0., 10^6 * 365. * 24. * 3600.)
+                      #  zeta, omega, T, F_UV, A_v, E, density
+rates_set_lower_bound = [1e-17, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [9.9e-17, 0.5, 300, 1., 10., 1e6]
+
+parameter_samples1 = sample(2, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
+
+rates_set_lower_bound = [1e-16, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [9.9e-16, 0.5, 300, 1., 10., 1e6]
+
+parameter_samples2 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
+
+rates_set_lower_bound = [1e-15, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [9.9e-15, 0.5, 300, 1., 10., 1e6]
+
+parameter_samples3 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
+
+rates_set_lower_bound = [1e-14, 0.5, 10, 1., 10., 1e2]
+rates_set_upper_bound = [9.9e-14, 0.5, 300, 1., 10., 1e6]
+
+parameter_samples4 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
+
+parameter_samples = [parameter_samples1; parameter_samples2; parameter_samples3; parameter_samples4]
+
+problems = parameter_samples4 .|>
+            begin
+                x->Parameters(x...) |> 
+                x->formulate_all(rfp, icfp, x, tspan=tspan)
+            end
+
+for p in problems
+    u0 = rand(length(p.u0))
+    p.u0[begin:end] .= u0 / sum(u0)
 end
 
-rates_set1 = sample(50, [0.04, 0.01,0.01], [1.0, 4e5, 9e4],SobolSample())
-rates_set2 = sample(50, [0.04, 0.01,0.01], [4e5, 1.0, 9e4],SobolSample())
-rates_set3 = sample(50, [0.04, 0.01,0.01], [4e5, 4e5, 1.0],SobolSample())
-rates_set = [rates_set1; rates_set2; rates_set3]
+train = problems .|> x->solve(x, abstol=10e-20);
 
-rates = [0.04,3e7,1e4]
-u0 = [1.0,1e-30,1e-30]
-tspan = (0., 1e5)
+full = parameter_samples .|>
+            begin
+                x->Parameters(x...) |> 
+                x->formulate_all(rfp, icfp, x, tspan=tspan) |>
+                x->
+                begin 
+                  prob=ODEProblem(x.network, x.u0, x.tspan)
+                  @time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-8)
+                  (remake(prob, p=x.rates), sol)
+                end
+            end
 
-function solve_all(r)
-    u = rand(3)
-    u = u ./ sum(u)
-    prob = ODEProblem(rober, u, tspan, [r...])
-    sol = solve(prob, CVODE_BDF(), abstol=1e-20, reltol=1e-8)
-    train = hcat(sol.u...)
-    rates_t = repeat([r...], length(sol.t)) |> x->reshape(x, length(rates), :)
+solutions = problems .|> x->@time  solve(x, CVODE_BDF(), abstol=10e-30, reltol=10e-8)
 
-    species_and_rates = vcat(rates_t, sol.t') |> x->log10.(x .+ 1e-30) |> x->vcat(x, train)
-    X_new = species_and_rates[:, 1:end-1]
-    y_new = species_and_rates[4:7, 2:end]
-    (X_new, y_new)
-end
+# two possible pre-processes: each species between 0,1 
+rates_length = length(train[begin].rates)
 
-full = rates_set .|> solve_all 
-X = full .|> x->x[begin]
-y = full .|> x->x[end]
+#preprocess1(train_set::Matrix) = train_set[rates_length+2:end, :] |> x -> (x .- minimum(x)) ./ (maximum(x) - minimum(x))
+#preprocess2(train_set::Matrix) = eachcol(train_set) .|> x->x ./ sum(abs.(x))
+
+full_train = full .|>
+    sol->vcat(repeat([log10.(sol[begin].p)...], length(sol[end].t)) |> 
+    x->reshape(x, length(sol[begin].p), :), log10.(sol[end].t)', hcat(sol[end].u...)) 
+
+X = full_train .|> x->replace(x[:, begin:end-1], -Inf=>0.0)
+y = full_train .|> x->replace(x[rates_length+2:end, 2:end], -Inf=>0.0)
+
+input_dimension = size(X[begin], 1)
+output_dimension = size(y[begin], 1)
 
 test_ind = length(y)
 
@@ -53,11 +89,11 @@ warmup = X[test_ind][:, begin:warmup_length]
 steps = size(y[test_ind], 2) - size(warmup, 2)
 
 """
-Simple Test of fit on the Robertson Problem
+Prediction on Multiple Systems of a Small Network
 """
 
 # ESR
-esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(7,500,4);
+esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimension, 500, output_dimension);
 #desn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(7, 50, 6,4);
 #sesn = ESN.SplitEchoStateNetwork{Float64, ESN. EchoStateReservoir{Float64}}((3,4), (200, 300), 4)
 st = X[test_ind][begin:3, :]
@@ -78,44 +114,49 @@ plot!(10 .^ pred1[begin, :], pred1[2:end, :]', xscale=:log10, label="CTESN", lay
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_ESR.png"))
 
 # SCR
-esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(7,600,4; c=.6);
-desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(7, 100, 6, 4, c=.7);
+esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 800, output_dimension; c=.7);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 200, 8, output_dimension,1.0, c=.7);
 
-st = X[test_ind][begin:3, :]
-xt = warmup[4:end, :]
+st = X[test_ind][begin:rates_length+1, :]
+xt = warmup[rates_length+2:end, :]
 
-ESN.train!(esn, X[1:end-1], y[1:end-1], 1e-6)
+ESN.train!(esn, X[1:end-1], y[1:end-1], 5.)
 pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-ESN.train!(desn, X[1:end-1], y[1:end-1], 2e-11)
+ESN.train!(desn, X[1:end-1], y[1:end-1], 1.)
 pred2 = ESN.predict!(desn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
 _y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-plot(10 .^ _y[begin, warmup_length:end], _y[2:end, warmup_length:end]', xscale=:log10, label="GT", layout=4, legend=:outertopright)
-plot!(10 .^ pred1[begin, :], pred1[2:end, :]', xscale=:log10, label="CTESN", layout=4)
-plot!(10 .^ pred2[begin, :], pred2[2:end, :]', xscale=:log10, label="DeepCTESN", layout=4)
+plot(10 .^ X[test_ind][1, warmup_length:end], _y[1:end, warmup_length:end]',
+    xscale=:log10, label="GT", layout=length(train[begin].species)+1, legend=:outertopright, size=(1200,1000))
+plot!(10 .^ X[test_ind][1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=length(train[begin].species)+1)
+plot!(10 .^ X[test_ind][1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=length(train[begin].species)+1)
 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_SCR.png"))
 
 # DLR
-esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(7,600,4, c=.6);
-desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(7, 100, 6,4, c=.6);
 
-st = X[test_ind][begin:3, :]
-xt = warmup[4:end, :]
+esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimension, 2000, output_dimension; c=.7);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimension, 200, 5, output_dimension,1.0, c=.7);
+#sesn = ESN.SplitEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}((rates_length+1, length(train[begin].species)), (1200, 800), output_dimension, c=.7)
 
-ESN.train!(esn, X[1:end-1], y[1:end-1], 4e-8)
+st = X[test_ind][begin:rates_length+1, :]
+xt = warmup[rates_length+2:end, :]
+
+ESN.train!(esn, X[1:end-1], y[1:end-1], 1.0)
 pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-ESN.train!(desn, X[1:end-1], y[1:end-1], 9e-11)
+ESN.train!(desn, X[1:end-1], y[1:end-1], 2.0)
 pred2 = ESN.predict!(desn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
 _y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-plot(10 .^ _y[begin, warmup_length:end], _y[2:end, warmup_length:end]', xscale=:log10, label="GT", layout=4, legend=:outertopright)
-plot!(10 .^ pred1[begin, :], pred1[2:end, :]', xscale=:log10, label="CTESN", layout=4)
-plot!(10 .^ pred2[begin, :], pred2[2:end, :]', xscale=:log10, label="DeepCTESN", layout=4)
+plot(10 .^ X[test_ind][rates_length+1, warmup_length:end], _y[1:end, warmup_length:end]',
+    xscale=:log10, label="GT", layout=length(train[begin].species)+1, legend=:outertopright, size=(1200,1000))
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=length(train[begin].species)+1)
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=length(train[begin].species)+1)
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred3[1:end, :]', xscale=:log10, label="SESN", layout=length(train[begin].species)+1)
 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_DLR.png"))
 
@@ -143,9 +184,9 @@ savefig(projectdir("images", "MS_SR_TC_prediction_RP_DLRF.png"))
 """
 MAE accross the validation set
 """
-rates_set1 = sample(33, [0.04, 0.01,0.01], [1.0, 4e5, 9e4],SobolSample())
-rates_set2 = sample(33, [0.04, 0.01,0.01], [4e5, 1.0, 9e4],SobolSample())
-rates_set3 = sample(34, [0.04, 0.01,0.01], [4e5, 4e5, 1.0],SobolSample())
+rates_set1 = sample(50, [0.04, 0.01,0.01], [1.0, 4e5, 9e4],SobolSample())
+rates_set2 = sample(50, [0.04, 0.01,0.01], [4e5, 1.0, 9e4],SobolSample())
+rates_set3 = sample(50, [0.04, 0.01,0.01], [4e5, 4e5, 1.0],SobolSample())
 rates_set = [rates_set1; rates_set2; rates_set3]
 
 function solve_all(r)
