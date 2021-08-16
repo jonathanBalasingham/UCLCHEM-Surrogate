@@ -46,14 +46,11 @@ function create_gas_phase_network(reactions::DataFrame; species=nothing)
     remove_these = ["NAN", "CRP", "PHOTON", "CRPHOT", "NaN", "nan", NaN, 
                     "DIFF", "FREEZE", "THERM", "CHEMDES", "DESCR", "DESOH2", "DEUVCR", "H2FORM"]
 
-    i = nrow(reactions)
-    r = (@parameters r[1:i])[begin]
-
-    for (i,reaction_row) in enumerate(eachrow(reactions))
+    for reaction_row in eachrow(reactions)
         re = filter(x -> !ismissing(x) && !isnan(x) && !(x in remove_these), reaction_row[1:3] |> Array) .|> Symbol
         pr = filter(x -> !ismissing(x) && !isnan(x) && !(x in remove_these), reaction_row[4:7] |> Array) .|> Symbol
         rate = reaction_row[end]
-        rx = Reaction(r[i], make_variable.(re), make_variable.(pr))
+        rx = Reaction(rate, make_variable.(re), make_variable.(pr))
         addreaction!(network, rx)
     end
     network
@@ -66,10 +63,10 @@ function formulate_ode_system(rx_network)
 end
 
 
-function formulate_ode_problem(rx_network, u0, tspan, rates)
+function formulate_ode_problem(rx_network, u0, tspan)
     sys = formulate_ode_system(rx_network)
     u0map = map((x,y) -> Pair(x,y), species(rx_network), u0)
-    ODEProblem(rx_network, u0map, tspan, rates)
+    ODEProblem(rx_network, u0map, tspan)
 end
 
 
@@ -104,10 +101,10 @@ function create_u0(network::ReactionSystem, initial_conditions::Dict; default_va
     u0
 end
 
-function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365. * 10^7))
+function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365. * 10^7), rates=nothing)
     ics = read_in_initial_conditions(icfp)
     reactions_data = read_in_reactions(rfp)
-    calculateRates!(reactions_data, p)
+    calculateRates!(reactions_data, p, rates=rates)
     network = create_gas_phase_network(reactions_data)
     rates = reactions_data[!, end]
     sys = formulate_ode_system(network)

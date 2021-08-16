@@ -85,7 +85,7 @@ EchoStateReservoir(W::Matrix{T}, b::Vector{T}, f::Function, α=1.0) where T<:Abs
     res.state = (1-convert(T, α)).*res.state + convert(T,α)*res.f.(convert(Vector{T}, input) + res.weight*res.state)
 *(res::AbstractReservoir{T}, input::Vector{V}, α=res.α) where {T<:AbstractFloat, V<:AbstractFloat} = res(input, α)
 
-reset!(res::R) where {R<:AbstractReservoir} = res.state .*= 0
+reset!(res::R) where {R<:AbstractReservoir} = res.state .= 0
 
 function Base.show(io::IO, res::EchoStateReservoir{T}) where T<:AbstractFloat
     sparsity  = count(x->x!=0.0, res.weight) / length(res.weight)
@@ -129,6 +129,7 @@ mutable struct EchoStateNetwork{T<:AbstractFloat,R<:AbstractReservoir{T}} <: Abs
     input_layer::Dense
     reservoir::R
     output_layer::Union{Dense, Chain}
+    ess::Bool
     # TODO: I should change this to be uniform with the deep esn constructor
     function EchoStateNetwork{T, R}(input_layer::Dense, W::R, output_layer::Union{Dense, Chain}) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
         let input_size = size(input_layer.weight, 1), res_size = size(W.weight, 1)
@@ -136,7 +137,7 @@ mutable struct EchoStateNetwork{T<:AbstractFloat,R<:AbstractReservoir{T}} <: Abs
             input_size == res_size || @error "Incompatible input and reservoir sizes:($input_size, $res_size)
                                                          Reservoir needs size: $viable_res_size"
         end
-        new(input_layer, W, output_layer)
+        new(input_layer, W, output_layer, length(W.state) != size(output_layer.weight, 2))
     end
 end
 
@@ -146,9 +147,10 @@ function EchoStateNetwork{T, R}(input_size::I,
                              reservoir_size::I, 
                              output_size::I, 
                              σ=0.5; 
-                             input_activation=tanh, 
+                             input_activation=identity, 
                              input_sparsity=.7,
                              output_activation=identity,
+                             ess=false,
                              kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
     f = T == Float32 ? f32 : f64
     inp = Dense(input_size, reservoir_size, input_activation, init=Flux.sparse_init(sparsity=input_sparsity))
@@ -157,7 +159,7 @@ function EchoStateNetwork{T, R}(input_size::I,
         simple_layer!(inp, σ)
     end
     res = create_reservoir(R, T, reservoir_size; kwargs...)
-    out = f(Dense(reservoir_size, output_size, output_activation))
+    out = f(Dense(reservoir_size + (ess ? input_size : 0), output_size, output_activation))
     EchoStateNetwork{T, R}(f(inp), res, out)
 end
 
@@ -200,7 +202,14 @@ end
 reset!(desn::DeepEchoStateNetwork) = for res in desn.reservoirs reset!(res) end
 
 
-(esn::EchoStateNetwork)(x::T) where T<:AbstractArray = x |> esn.input_layer |> esn.reservoir |> esn.output_layer
+function (esn::EchoStateNetwork)(x::T) where T<:AbstractArray 
+    res_output = x |> esn.input_layer |> esn.reservoir
+    if esn.ess
+        vcat(res_output,x) |> esn.output_layer
+    else
+        x |> esn.output_layer
+    end
+end
 
 stateof(esn::EchoStateNetwork) = esn.reservoir.state
 inputdim(esn::EchoStateNetwork) = size(esn.input_layer.weight, 2)
@@ -209,7 +218,11 @@ outputdim(esn::T) where T<:AbstractEchoStateNetwork = if esn.output_layer isa De
 
 
 function get_states!(esn::EchoStateNetwork, train::Matrix{T}) where T<:AbstractFloat
-    reservoir_output = [x |> esn.input_layer |> esn.reservoir for x in eachcol(train)] 
+    if esn.ess
+        reservoir_output = [x |> esn.input_layer |> esn.reservoir |> i->vcat(i,x) for x in eachcol(train)]
+    else
+        reservoir_output = [x |> esn.input_layer |> esn.reservoir for x in eachcol(train)] 
+    end
     ESN.reset!(esn)
     hcat(reservoir_output...)' |> Matrix
 end
@@ -352,6 +365,8 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
                                         input_activation=identity, 
                                         output_activation=identity,
                                         kwargs...) where {I<:Integer, T<:AbstractFloat, R<:AbstractReservoir{T}}
+        f = T == Float32 ? f32 : f64
+
         additional_solver_input = length(problem.u0)
         input_layer = Dense(input_size + additional_solver_input, reservoir_size, input_activation)
 
@@ -370,7 +385,7 @@ mutable struct HybridEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}}
         intg = init(problem, solver())
         intg.opts.abstol = abstol
         intg.opts.reltol = reltol
-        new{T, R}(input_layer, reservoir, output_layer, problem, intg, dt)
+        new{T, R}(f(input_layer), reservoir, f(output_layer), problem, intg, dt)
     end
 end
 
@@ -436,14 +451,14 @@ mutable struct SplitEchoStateNetwork{T<:AbstractFloat, R<:AbstractReservoir{T}} 
         f = T == Float32 ? f32 : f64
         inp = Dense[f(Dense(input_sizes[i], reservoir_sizes[i], input_activation, init=Flux.sparse_init(sparsity=input_sparsity))) for i in 1:length(input_sizes)]
         if !(R <: EchoStateReservoir)  
-            for i in inp simple_layer!.(i, σ) end
+            for i in inp simple_layer!(i, σ) end
         else
             for i in inp i.weight .*= σ end
         end
         res = R[create_reservoir(R, T, reservoir_sizes[i]; kwargs...) for i in 1:length(reservoir_sizes)]
         state_output_size = sum(reservoir_sizes)
         out = f(Dense(state_output_size, output_size, output_activation))
-        new{T, R}(inp, res, out)
+        new{T, R}(f(inp), res, f(out))
     end
 end
 
