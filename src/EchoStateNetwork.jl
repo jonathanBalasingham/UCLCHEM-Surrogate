@@ -207,7 +207,7 @@ function (esn::EchoStateNetwork)(x::T) where T<:AbstractArray
     if esn.ess
         vcat(res_output,x) |> esn.output_layer
     else
-        x |> esn.output_layer
+        res_output |> esn.output_layer
     end
 end
 

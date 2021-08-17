@@ -4,6 +4,7 @@ using DrWatson
 using Surrogates
 
 include(srcdir("EchoStateNetwork.jl"))
+include(srcdir("Sample.jl"))
 
 using DifferentialEquations, Plots, Sundials
 
@@ -17,67 +18,24 @@ rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initco
 
 tspan = (0., 10^6 * 365. * 24. * 3600.)
                       #  zeta, omega, T, F_UV, A_v, E, density
-rates_set_lower_bound = [1e-17, 0.5, 10, 1., 10., 1e2]
-rates_set_upper_bound = [9.9e-17, 0.5, 300, 1., 10., 1e6]
+phys_params = [1e-14, 0.5, 300, 1., 10., 1e6]
+rates_set = sample_around(30, rfp, Parameters(phys_params...))
 
-parameter_samples1 = sample(2, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
-
-rates_set_lower_bound = [1e-16, 0.5, 10, 1., 10., 1e2]
-rates_set_upper_bound = [9.9e-16, 0.5, 300, 1., 10., 1e6]
-
-parameter_samples2 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
-
-rates_set_lower_bound = [1e-15, 0.5, 10, 1., 10., 1e2]
-rates_set_upper_bound = [9.9e-15, 0.5, 300, 1., 10., 1e6]
-
-parameter_samples3 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
-
-rates_set_lower_bound = [1e-14, 0.5, 10, 1., 10., 1e2]
-rates_set_upper_bound = [9.9e-14, 0.5, 300, 1., 10., 1e6]
-
-parameter_samples4 = sample(10, rates_set_lower_bound, rates_set_upper_bound, SobolSample())
-
-parameter_samples = [parameter_samples1; parameter_samples2; parameter_samples3; parameter_samples4]
-
-problems = parameter_samples4 .|>
+u0 = rand(23)
+u0 ./= sum(u0)
+X_and_y = rates_set .|> 
+            x->
             begin
-                x->Parameters(x...) |> 
-                x->formulate_all(rfp, icfp, x, tspan=tspan)
+              p = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=x)
+              prob = ODEProblem(p.network, u0, p.tspan)
+              sol = solve(prob, CVODE_BDF(), abstol=1e-30, reltol=1e-10)
+              rates_repeated = reshape(repeat(x, length(sol.t)), length(x), :)
+              vcat(rates_repeated, log10.(sol.t .+ 1e-30)', hcat(sol.u...))
             end
 
-for p in problems
-    u0 = rand(length(p.u0))
-    p.u0[begin:end] .= u0 / sum(u0)
-end
-
-train = problems .|> x->solve(x, abstol=10e-20);
-
-full = parameter_samples .|>
-            begin
-                x->Parameters(x...) |> 
-                x->formulate_all(rfp, icfp, x, tspan=tspan) |>
-                x->
-                begin 
-                  prob=ODEProblem(x.network, x.u0, x.tspan)
-                  @time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-8)
-                  (remake(prob, p=x.rates), sol)
-                end
-            end
-
-solutions = problems .|> x->@time  solve(x, CVODE_BDF(), abstol=10e-30, reltol=10e-8)
-
-# two possible pre-processes: each species between 0,1 
-rates_length = length(train[begin].rates)
-
-#preprocess1(train_set::Matrix) = train_set[rates_length+2:end, :] |> x -> (x .- minimum(x)) ./ (maximum(x) - minimum(x))
-#preprocess2(train_set::Matrix) = eachcol(train_set) .|> x->x ./ sum(abs.(x))
-
-full_train = full .|>
-    sol->vcat(repeat([log10.(sol[begin].p)...], length(sol[end].t)) |> 
-    x->reshape(x, length(sol[begin].p), :), log10.(sol[end].t)', hcat(sol[end].u...)) 
-
-X = full_train .|> x->replace(x[:, begin:end-1], -Inf=>0.0)
-y = full_train .|> x->replace(x[rates_length+2:end, 2:end], -Inf=>0.0)
+X = X_and_y .|> x->x[:, begin:end-1]
+rates_length = length(rates_set[begin])
+y = X_and_y .|> x->x[rates_length+2:end, begin+1:end]
 
 input_dimension = size(X[begin], 1)
 output_dimension = size(y[begin], 1)
@@ -88,18 +46,42 @@ warmup_length = 10
 warmup = X[test_ind][:, begin:warmup_length]
 steps = size(y[test_ind], 2) - size(warmup, 2)
 
+st = X[test_ind][begin:rates_length+1, :]
+xt = warmup[rates_length+2:end, :]
+
+
 """
 Prediction on Multiple Systems of a Small Network
 """
+_y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
+
+
+function test!(esn, beta)
+  ESN.train!(esn, X, y, beta)
+  pred = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
+  Flux.Losses.mae(pred, _y[:, warmup_length+1:end])
+end
+
+function test_all(esn, beta=2.0, reduction_factor=.6)
+    error = Inf
+    while true
+      new_error = test!(esn, beta)
+      if new_error > error
+        return (error, beta / .5)
+      else
+        error = new_error
+      end
+      beta *= reduction_factor
+    end
+end
+
 
 # ESR
 esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimension, 500, output_dimension);
 #desn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(7, 50, 6,4);
 #sesn = ESN.SplitEchoStateNetwork{Float64, ESN. EchoStateReservoir{Float64}}((3,4), (200, 300), 4)
-st = X[test_ind][begin:3, :]
-xt = warmup[4:end, :]
 
-ESN.train!(esn, X[1:end-1], y[1:end-1], 1e-3)
+ESN.train!(esn, X[1:end-1], y[1:end-1], 1.1372115211971872e-5)
 pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
 #ESN.train!(sesn, X[1:end-1], y[1:end-1], 3e-2)
@@ -107,8 +89,8 @@ pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :])).
 
 _y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-plot(10 .^ _y[begin, warmup_length:end], _y[2:end, warmup_length:end]', xscale=:log10, label="GT", layout=4, legend=:outertopright)
-plot!(10 .^ pred1[begin, :], pred1[2:end, :]', xscale=:log10, label="CTESN", layout=4)
+plot(10 .^ X[test_ind][rates_length+1, warmup_length:end], _y[2:end, warmup_length:end]', xscale=:log10, label="GT", layout=24, legend=:outertopright, size=(1200,800))
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[2:end, :]', xscale=:log10, label="CTESN", layout=24)
 #plot!(10 .^ pred2[begin, :], pred2[2:end, :]', xscale=:log10, label="Split CTESN", layout=4)
 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_ESR.png"))
@@ -117,21 +99,16 @@ savefig(projectdir("images", "MS_SR_TC_prediction_RP_ESR.png"))
 esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 800, output_dimension; c=.7);
 desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 200, 8, output_dimension,1.0, c=.7);
 
-st = X[test_ind][begin:rates_length+1, :]
-xt = warmup[rates_length+2:end, :]
-
-ESN.train!(esn, X[1:end-1], y[1:end-1], 5.)
+ESN.train!(esn, X[1:end-1], y[1:end-1], 1.44)
 pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-ESN.train!(desn, X[1:end-1], y[1:end-1], 1.)
+ESN.train!(desn, X[1:end-1], y[1:end-1], 2.4)
 pred2 = ESN.predict!(desn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-_y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-plot(10 .^ X[test_ind][1, warmup_length:end], _y[1:end, warmup_length:end]',
-    xscale=:log10, label="GT", layout=length(train[begin].species)+1, legend=:outertopright, size=(1200,1000))
-plot!(10 .^ X[test_ind][1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=length(train[begin].species)+1)
-plot!(10 .^ X[test_ind][1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=length(train[begin].species)+1)
+plot(10 .^ X[test_ind][rates_length+1, warmup_length:end], _y[1:end, warmup_length:end]', xscale=:log10, label="GT", layout=24, legend=:outertopright, size=(1600,1000))
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=output_dimension+1)
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=output_dimension+1)
 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_SCR.png"))
 
@@ -141,28 +118,21 @@ esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimen
 desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimension, 200, 5, output_dimension,1.0, c=.7);
 #sesn = ESN.SplitEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}((rates_length+1, length(train[begin].species)), (1200, 800), output_dimension, c=.7)
 
-st = X[test_ind][begin:rates_length+1, :]
-xt = warmup[rates_length+2:end, :]
-
-ESN.train!(esn, X[1:end-1], y[1:end-1], 1.0)
+ESN.train!(esn, X[1:end-1], y[1:end-1], 0.864)
 pred1 = ESN.predict!(esn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-ESN.train!(desn, X[1:end-1], y[1:end-1], 2.0)
+ESN.train!(desn, X[1:end-1], y[1:end-1], 0.18662399999999998)
 pred2 = ESN.predict!(desn, xt, st) |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
 
-_y = y[test_ind] |> x->vcat(x, hcat(sum.(eachcol(x[2:end, :]))...))
-
-plot(10 .^ X[test_ind][rates_length+1, warmup_length:end], _y[1:end, warmup_length:end]',
-    xscale=:log10, label="GT", layout=length(train[begin].species)+1, legend=:outertopright, size=(1200,1000))
-plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=length(train[begin].species)+1)
-plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=length(train[begin].species)+1)
-plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred3[1:end, :]', xscale=:log10, label="SESN", layout=length(train[begin].species)+1)
+plot(10 .^ X[test_ind][rates_length+1, warmup_length:end], _y[1:end, warmup_length:end]', xscale=:log10, label="GT", layout=24, legend=:outertopright, size=(1600,1000))
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[1:end, :]', xscale=:log10, label="CTESN", layout=output_dimension+1)
+plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred2[1:end, :]', xscale=:log10, label="DeepCTESN", layout=output_dimension+1)
 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_DLR.png"))
 
 # DLR w/F
-esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(7,600,4, c=.7, feedback=.2);
-desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(7, 100, 6,4, c=.7, feedback=.1);
+esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimension,600, output_dimension, c=.7, feedback=.2);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(input_dimension, 100, 6, output_dimension, c=.7, feedback=.1);
 
 st = X[test_ind][begin:3, :]
 xt = warmup[4:end, :]

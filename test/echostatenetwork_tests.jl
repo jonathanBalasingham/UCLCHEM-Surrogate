@@ -16,12 +16,13 @@ function rober(du,u,p,t)
   nothing
 end
 
+dt = 10.
 rates = [0.04,3e7,1e4]
 u0 = [1.0,1e-30,1e-30]
 tspan = (0., 1e5)
 prob = ODEProblem(rober, u0, tspan, rates)
-sol = solve(prob, CVODE_BDF(), abstol=1e-16, reltol=1e-10)
-high_error_sol = solve(prob, CVODE_BDF(), abstol=1e-6, reltol=1e-4)
+sol = solve(prob, CVODE_BDF(), abstol=1e-16, reltol=1e-10, saveat=dt)
+high_error_sol = solve(prob, CVODE_BDF(), abstol=1e-4, reltol=1e-2, saveat=dt)
 train = hcat(sol.u...)
 high_error_train = hcat(high_error_sol.u...)
 rates_t = repeat(rates, length(sol.t)) |> x->reshape(x, length(rates), :)
@@ -50,7 +51,7 @@ esn = ESN.EchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3,300,3);
 desn = ESN.DeepEchoStateNetwork{Float64, ESN.DelayLineReservoir{Float64}}(3, 50, 6,3);
 
 
-hesn = ESN.HybridEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(3,250,3,prob, CVODE_BDF, abstol=1e-6, reltol=1e-4)
+hesn = ESN.HybridEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(3,250,3,prob, CVODE_BDF, dt, abstol=1e-6, reltol=1e-4)
 
 ESN.train!(esn, [X], [y], 1e-4)
 ESN.train!(desn, [X], [y], 1e-4)
@@ -100,6 +101,9 @@ plot!(high_error_sol.t[2:end-1], prediction3', xscale=:log10, label="HE GT", lay
 plot(sol.t[startup+1:end], y[:, startup:end]', xscale=:log10, label="ground truth", layout=3)
 plot!(sol.t[startup+1:end], prediction', xscale=:log10, label="CTESN", layout=3)
 plot!(sol.t[startup+1:end], prediction2', xscale=:log10, label="DeepCTESN", layout=3)
+
+plot(sol.t[2:end], y[:, startup:end]', xscale=:log10, label="ground truth", layout=3)
+plot!(sol.t[startup+1:end], prediction', xscale=:log10, label="CTESN", layout=3)
 
 
 """
