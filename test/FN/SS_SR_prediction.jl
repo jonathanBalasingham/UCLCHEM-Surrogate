@@ -357,6 +357,8 @@ boxplot!(errors[7], label="DLRF CTESN")
 boxplot!(errors[8], label="DLRF Deep CTESN")
 
 savefig(projectdir("images", "Full_network_SS_SR_log2_box_plot_validation_15_MAE.png"))
+
+
 """
 ROC across the samples
 """
