@@ -65,3 +65,9 @@ function retroactive_loss(prediction::Matrix, prob, solver; loss=Flux.Losses.mae
     
     loss(hcat(true_solution...), prediction[2:end, :]) / size(true_solution, 2)
 end
+
+
+function normalize_each_column(X::Matrix)
+    # here I add a small buffer so I can take the log later on
+    X |> x -> (eachcol(x .+ abs(minimum(x))*1.01) .|> x->(x./sum(x))) |> x->hcat(x...)
+end
