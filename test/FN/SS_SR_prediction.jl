@@ -394,7 +394,7 @@ error_esr_ctesn = Float64[]
 error_esr_deep_ctesn = Float64[]
 
 err, esn_beta = test_all(esn, 100)
-err, desn_beta = test_all(desn)
+err, desn_beta = test_all(desn, 5)
 
 for (x_i,y_i) in zip(X_set, y_set)
   warmup_length_i = 10
