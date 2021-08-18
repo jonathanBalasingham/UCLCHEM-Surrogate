@@ -4,7 +4,7 @@ using DrWatson
 using DifferentialEquations, Plots, Sundials, Serialization, ReservoirComputing, Surrogates
 
 using Random
-Random.seed!(1)
+Random.seed!(0)
 
 include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "NetworkSurrogate.jl"]))
 
