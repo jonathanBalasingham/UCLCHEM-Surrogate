@@ -16,18 +16,18 @@ include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "N
 rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
 
 
-tspan = (0., 10^6 * 365. * 24. * 3600.)
+tspan = (0., 10^7 * 365. * 24. * 3600.)
                       #  zeta, omega, T, F_UV, A_v, E, density
 phys_params = [1e-14, 0.5, 300, 1., 10., 1e6]
 rates_set = sample_around(30, rfp, Parameters(phys_params...))
 
-u0 = rand(23)
-u0 ./= sum(u0)
+#u0 = rand(23)
+#u0 ./= sum(u0)
 X_and_y = rates_set .|> 
             x->
             begin
               p = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=x)
-              prob = ODEProblem(p.network, u0, p.tspan)
+              prob = ODEProblem(p.network, p.u0, p.tspan)
               sol = solve(prob, CVODE_BDF(), abstol=1e-30, reltol=1e-10)
               rates_repeated = reshape(repeat(x, length(sol.t)), length(x), :)
               vcat(rates_repeated, log10.(sol.t .+ 1e-30)', hcat(sol.u...))
