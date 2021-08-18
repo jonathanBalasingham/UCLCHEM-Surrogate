@@ -96,7 +96,7 @@ plot!(10 .^ X[test_ind][rates_length+1, warmup_length+1:end], pred1[2:end, :]', 
 savefig(projectdir("images", "MS_SR_TC_prediction_RP_ESR.png"))
 
 # SCR
-esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 800, output_dimension; c=.7);
+esn = ESN.EchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 3000, output_dimension; c=.7);
 desn = ESN.DeepEchoStateNetwork{Float64, ESN.SimpleCycleReservoir{Float64}}(input_dimension, 200, 8, output_dimension,1.0, c=.7);
 
 ESN.train!(esn, X[1:end-1], y[1:end-1], 1.44)
