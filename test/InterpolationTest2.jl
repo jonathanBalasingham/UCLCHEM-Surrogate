@@ -8,7 +8,7 @@ Random.seed!(0)
 
 include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "NetworkSurrogate.jl"]))
 
-rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_final.csv", "initcond0.csv", "species.csv"])
+rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
 
 include(srcdir("EchoStateNetwork.jl"))
 include(srcdir("Scoring.jl"))
@@ -23,9 +23,9 @@ true_rates = get_rates(rfp, Parameters(midpoint...))
 new_lower_bound = .95 .* true_rates
 new_upper_bound = 1.05 .* true_rates
 
-parameter_samples1 = sample(8, new_lower_bound, true_rates .* .981, SobolSample())
-parameter_samples2 = sample(8, true_rates .* 1.016, new_upper_bound, SobolSample())
-parameter_samples3 = sample(8, true_rates.* .961, true_rates .* 1.041, SobolSample())
+parameter_samples1 = sample(10, new_lower_bound, true_rates .* .981, SobolSample())
+parameter_samples2 = sample(10, true_rates .* 1.016, new_upper_bound, SobolSample())
+parameter_samples3 = sample(10, true_rates.* .961, true_rates .* 1.041, SobolSample())
 parameter_samples = [parameter_samples1; parameter_samples2; parameter_samples3]
 
 d = Dict()
@@ -49,11 +49,14 @@ train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
 X = [train[:, begin:end-1]]
 y = [train[:, begin+1:end]]
 
+timepoints = sol.t
+
 warmup_length = 10
 warmup = X[begin][:, begin:warmup_length]
 steps = size(y[begin], 2) - size(warmup, 2)
 
-
+input_dimension = size(X[begin], 1)
+output_dimension = size(y[begin], 1)
 
 function test!(esn, beta, X, y)
     ESN.train!(esn, X, y, beta)
@@ -62,7 +65,7 @@ function test!(esn, beta, X, y)
     steps = size(y[begin], 2) - size(warmup, 2)
     pred = ESN.predict!(esn, warmup, steps) |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
     _y = y[begin] |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
-    roc(pred, _y[begin:end, warmup_length:end])
+    Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
   end
   
 function test_all(esn, X, y, beta=20.0, reduction_factor=.8)
@@ -94,16 +97,16 @@ parameter_samples .|>
                             return
                         end
                         prob=ODEProblem(x.network, x.u0, x.tspan)
-                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback)
+                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback, saveat=timepoints)
                         if sol.t[end] >= tspan[2]*.999
                             train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
                             X = [train[:, begin:end-1]]
                             y = [train[:, begin+1:end]]
 
-                            #err, beta = test_all(esn, X, y)
+                            err, beta = test_all(esn, X, y)
                             @info "Using beta: $beta with roc error: $err"
-                            ESN.train!(desn, X, y, beta)
-                            flattened_W_out = reshape(desn.output_layer.weight, :, 1)
+                            ESN.train!(esn, X, y, beta)
+                            flattened_W_out = reshape(esn.output_layer.weight, :, 1)
                             d[replace(log10.(x.rates .+ 1e-30), -Inf=>0.0)] = flattened_W_out
                             @info "Weight dictionary has $(length(keys(d))) entries"
                         end
@@ -127,21 +130,21 @@ test_rates = parameter_samples[end] .* 1.02
 test_parameters = [1e-15, 0.5, 10, 1., 10., 1e2]
 pa = Parameters(test_parameters...)
 p = formulate_all(rfp, icfp, pa, tspan=tspan, rates=[(true_rates)...])
-@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-15)
+@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-15, saveat=timepoints)
 train_subset = vcat(sol.t', hcat(sol.u...)) .|> x -> log2.(x .+ abs(minimum(x))*1.01)
 
-buffer = 50
 
 X = [train_subset[2:end, begin:end-1]]
 y = [train_subset[2:end, begin+1:end]]
 
-err, beta = test_all(desn, X, y)
+err, beta = test_all(esn, X, y)
 W_out_dims = size(esn.output_layer.weight)
 
 warmup_length = 10
 warmup = X[begin][:, begin:warmup_length]
 steps = size(y[begin], 2) - size(warmup, 2)
-
+ESN.train!(esn, X, y, beta)
+prediction2 = ESN.predict!(esn, warmup, steps)
 
 interp_rates = replace(log10.(p.rates .+ 1e-30), -Inf=>0.0)
 W_out_interpolated = reshape(weight_surrogate(interp_rates), W_out_dims)
@@ -151,21 +154,21 @@ prediction = ESN.predict!(esn, warmup, steps)
 
 for i in 1:Integer(round(size(X[begin], 1) / 25))+1
     if i*25 > size(X[begin], 1)
-      plot(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end],
-        _y[(i-1)*25+1:end, warmup_length:end]',
+      plot(sol.t[warmup_length+1:end],
+        y[begin][(i-1)*25+1:end, warmup_length:end]',
         xscale=:log10,
-        label="GT", layout=25, legend=nothing, size=(1200,800))
-        plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred1[(i-1)*25+1:end, :]', xscale=:log10, layout=24)
-        plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred2[(i-1)*25+1:end, :]', xscale=:log10, layout=24)      
+        label="GT", layout=23, legend=nothing, size=(1200,800))
+        plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:end, :]', xscale=:log10, layout=23)
+        plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:end, :]', xscale=:log10, layout=23)      
     else
-      plot(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end],
-        _y[(i-1)*25+1:i*25, warmup_length:end]',
+        plot(sol.t[warmup_length+1:end],
+        y[begin][(i-1)*25+1:i*25, warmup_length:end]',
         xscale=:log10,
-        label="GT", layout=25, legend=nothing, size=(1200,800))
-        plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred1[(i-1)*25+1:i*25, :]', xscale=:log10, layout=24)
-        plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=24)      
+        label="GT", layout=23, legend=nothing, size=(1200,800))
+        plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:i*25, :]', xscale=:log10, layout=23)
+        plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=23)    
     end
-    savefig(projectdir("test_plots", "Interpolation_ESR_species_$i.png"))
+    savefig(projectdir("test_plots", "Small_network_30_sample_DESN_Interpolation_ESR_species_$i.png"))
   end
 
 # 6.692415508435203 -> 119
