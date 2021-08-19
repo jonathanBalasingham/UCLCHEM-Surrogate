@@ -23,47 +23,22 @@ dark_cloud_lower = get_rates(rfp, Parameters(rates_set_lower_bound...))
 true_dark_cloud_lower = [min(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 true_dark_cloud_upper = [max(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 
-midpoint = (rates_set_lower_bound .+ rates_set_upper_bound) ./ 2
-true_rates = get_rates(rfp, Parameters(midpoint...))
-
-new_lower_bound = .95 .* true_rates
-new_upper_bound = 1.05 .* true_rates
-
-#parameter_samples1 = sample(10, new_lower_bound, true_rates .* .981, SobolSample())
-#parameter_samples2 = sample(10, true_rates .* 1.016, new_upper_bound, SobolSample())
-#parameter_samples3 = sample(26, true_rates.* .961, true_rates .* 1.041, SobolSample())
-parameter_samples = [parameter_samples1; parameter_samples2; parameter_samples3]
-
-d = Dict()
-#d = deserialize("weight_dict_esn")
-
-function condition(u, t, integrator)
-    check_error(integrator) != :Success
-end
-
-function affect!(integrator)
-    terminate!(integrator)
-end
+d = deserialize("weight_dict_esn")
 
 
-callback = ContinuousCallback(condition, affect!)
-
-pr = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=[parameter_samples[begin]...]);
-prob=ODEProblem(pr.network, pr.u0, pr.tspan)
-@time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-10, callback=callback)
-train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
+train = simulation_dict |> values |> first
 X = [train[:, begin:end-1]]
 y = [train[:, begin+1:end]]
 
-timepoints = sol.t
+timepoints = deserialize("timepoints")
 
 warmup_length = 10
 warmup = X[begin][:, begin:warmup_length]
 steps = size(y[begin], 2) - size(warmup, 2)
 
 input_dimesnion = size(X[begin], 1)
-output_dimension = size(X[begin], 1)
-esn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimesnion, 75, 8, output_dimension);
+output_dimension = size(y[begin], 1)
+esn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimesnion, 200, 10, output_dimension);
 
 function test!(esn, beta, X, y)
     ESN.train!(esn, X, y, beta)
@@ -75,7 +50,7 @@ function test!(esn, beta, X, y)
     Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
   end
   
-function test_all(esn, X, y, beta=20.0, reduction_factor=.6)
+function test_all(esn, X, y, beta=20.0, reduction_factor=.5)
     error = Inf
     while true
     new_error = test!(esn, beta, X, y)
@@ -96,41 +71,25 @@ err, beta = test_all(desn, X, y)
 bottom = filter(x->x>0,true_dark_cloud_lower) |> minimum |> log10 |> abs |> x->round(x)+1 
 r(x) = replace(log10.(x) .+ bottom, -Inf=>0.0)
 
-parameter_samples[1:end] .|>
-            begin
-                x->formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=[x...]) |>
-                x->
-                begin 
-                    rates = r(x.rates)
-                    try
-                        if rates in keys(simulation_dict)
-                            @info "skipping"
-                            return
-                        end
-                        prob=ODEProblem(x.network, x.u0, x.tspan)
-                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback, saveat=timepoints)
-                        if sol.t[end] >= tspan[2]*.999
-                            train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
-                            simulation_dict[rates] = train
-                            #X = [train[:, begin:end-1]]
-                            #y = [train[:, begin+1:end]]
 
-                            #err, beta = test_all(esn, X, y)
-                            #@info "Using beta: $beta with roc error: $err"
-                            #ESN.train!(esn, X, y, beta)
-                            #flattened_W_out = reshape(esn.output_layer.weight, :, 1)
-                            #d[rates] = flattened_W_out
-                            #@info "Weight dictionary has $(length(keys(d))) entries"
-                        end
-                    catch e
-                        println(e)
-                    end
-                end
-            end;
+errors = Float64[]
 
-
-
-         
+for (rates, solution) in simulation_dict
+    if rates in keys(desn_weight_dict)
+        continue
+    end
+    X = [solution[:, begin:end-1]]
+    y = [solution[:, begin+1:end]]
+    err, beta = test_all(esn, X, y)
+    push!(errors, err)
+    @info "Using beta: $beta with mae error: $err"
+    ESN.train!(esn, X, y, beta)
+    flattened_W_out = reshape(esn.output_layer.weight, :, 1)
+    desn_weight_dict[rates] = flattened_W_out
+    @info "Weight dictionary has $(length(keys(desn_weight_dict))) entries"
+    serialize("desn_weight_dict", desn_weight_dict)
+end
+      
 
 x_rates = keys(d)
 lowerbound = hcat(x_rates...) |> eachrow .|> minimum
