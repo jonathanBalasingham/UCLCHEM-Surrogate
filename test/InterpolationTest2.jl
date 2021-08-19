@@ -44,16 +44,20 @@ callback = ContinuousCallback(condition, affect!)
 
 pr = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=[parameter_samples[begin]...])
 prob=ODEProblem(pr.network, pr.u0, pr.tspan)
-@time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback)
+@time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-10, callback=callback)
 train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
 X = [train[:, begin:end-1]]
 y = [train[:, begin+1:end]]
+
+timepoints = sol.t
 
 warmup_length = 10
 warmup = X[begin][:, begin:warmup_length]
 steps = size(y[begin], 2) - size(warmup, 2)
 
-
+input_dimesnion = size(X[begin], 1)
+output_dimension = size(X[begin], 1)
+esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimesnion, 1500, output_dimension);
 
 function test!(esn, beta, X, y)
     ESN.train!(esn, X, y, beta)
@@ -65,7 +69,7 @@ function test!(esn, beta, X, y)
     roc(pred, _y[begin:end, warmup_length:end])
   end
   
-function test_all(esn, X, y, beta=20.0, reduction_factor=.8)
+function test_all(esn, X, y, beta=20.0, reduction_factor=.6)
     error = Inf
     while true
     new_error = test!(esn, beta, X, y)
@@ -94,16 +98,16 @@ parameter_samples .|>
                             return
                         end
                         prob=ODEProblem(x.network, x.u0, x.tspan)
-                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback)
+                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback, saveat=timepoints)
                         if sol.t[end] >= tspan[2]*.999
                             train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
                             X = [train[:, begin:end-1]]
                             y = [train[:, begin+1:end]]
 
-                            #err, beta = test_all(esn, X, y)
+                            err, beta = test_all(esn, X, y)
                             @info "Using beta: $beta with roc error: $err"
-                            ESN.train!(desn, X, y, beta)
-                            flattened_W_out = reshape(desn.output_layer.weight, :, 1)
+                            ESN.train!(esn, X, y, beta)
+                            flattened_W_out = reshape(esn.output_layer.weight, :, 1)
                             d[replace(log10.(x.rates .+ 1e-30), -Inf=>0.0)] = flattened_W_out
                             @info "Weight dictionary has $(length(keys(d))) entries"
                         end
@@ -127,7 +131,7 @@ test_rates = parameter_samples[end] .* 1.02
 test_parameters = [1e-15, 0.5, 10, 1., 10., 1e2]
 pa = Parameters(test_parameters...)
 p = formulate_all(rfp, icfp, pa, tspan=tspan, rates=[(true_rates)...])
-@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-15)
+@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-15, saveat=timepoints)
 train_subset = vcat(sol.t', hcat(sol.u...)) .|> x -> log2.(x .+ abs(minimum(x))*1.01)
 
 buffer = 50
