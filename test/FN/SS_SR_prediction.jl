@@ -101,7 +101,7 @@ Small Network, Single series static rates prediction
 Echo State Reservoir 
 """
 esn = ESN.EchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimension, 500, output_dimension);
-desn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimension, 100, 5, output_dimension);
+desn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimension, 250, 10, output_dimension);
 #sesn = ESN.SplitEchoStateNetwork{Float64, ESN. EchoStateReservoir{Float64}}((3,4), (200, 300), 4)
 
 #ESN.train!(esn, X[1:end-1], y[1:end-1], 1.1372115211971872e-5)
@@ -112,10 +112,10 @@ esn_error, esr_esn_beta = test_all(esn, 100)
 ESN.train!(esn, X[end:end], y[end:end], esr_esn_beta)
 pred1 = ESN.predict!(esn, warmup, steps) |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
 
-desn_error, esr_desn_beta = test_all(desn)
+desn_error, esr_desn_beta = test_all(desn, 5)
 
-ESN.train!(esn, X[end:end], y[end:end], esr_desn_beta)
-pred2 = ESN.predict!(desn, warmup, steps) |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+ESN.train!(desn, X[end:end], y[end:end], esr_desn_beta)
+@time pred2 = ESN.predict!(desn, warmup, steps) |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
 
 
 for i in 1:Integer(round(size(X[begin], 1) / 25))+1
@@ -134,7 +134,7 @@ for i in 1:Integer(round(size(X[begin], 1) / 25))+1
       plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred1[(i-1)*25+1:i*25, :]', xscale=:log10, layout=24)
       plot!(10 .^ X_and_y[test_ind][rates_length+1, warmup_length+1:end], pred2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=24)      
   end
-  savefig(projectdir("test_plots", "ESR_species_$i.png"))
+  savefig(projectdir("test_plots", "ESR_species_$(i)_10_res_size_250.png"))
 end
 
 #
