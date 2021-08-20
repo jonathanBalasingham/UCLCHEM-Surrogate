@@ -38,22 +38,42 @@ steps = size(y[begin], 2) - size(warmup, 2)
 
 input_dimesnion = size(X[begin], 1)
 output_dimension = size(y[begin], 1)
-esn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimesnion, 200, 10, output_dimension);
+esn = ESN.DeepEchoStateNetwork{Float64, ESN.EchoStateReservoir{Float64}}(input_dimesnion, 30, 10, output_dimension);
 
-function test!(esn, beta, X, y)
-    ESN.train!(esn, X, y, beta)
-    warmup_length = 10
-    warmup = X[begin][:, begin:warmup_length]
-    steps = size(y[begin], 2) - size(warmup, 2)
-    pred = ESN.predict!(esn, warmup, steps) |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
-    _y = y[begin] |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
-    Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
+
+transform(x; u0) = hcat((eachrow(x) ./ u0)...)' |> Matrix
+transform_back(x; u0) = hcat((eachrow(x) .* u0)...)' |> Matrix
+get_u0(x) = x[:, begin]
+
+function test!(esn, beta, X, y; nrm=false)
+    if nrm
+        u0 = X[begin][:, begin]
+        X_t = transform.(X, u0=u0)
+        y_t = transform.(y, u0=u0)
+        #ESN.train!(esn, X, y, beta)
+        ESN.train!(esn, X_t, y_t, beta)
+        warmup_length = 10
+        warmup = X_t[begin][:, begin:warmup_length]
+        steps = size(y[begin], 2) - size(warmup, 2)
+        @time pred = ESN.predict!(esn, warmup, steps) # |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+        pred = transform_back(pred, u0)
+        _y = y[begin] #|> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+        Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
+    else
+        ESN.train!(esn, X, y, beta)
+        warmup_length = 10
+        warmup = X[begin][:, begin:warmup_length]
+        steps = size(y[begin], 2) - size(warmup, 2)
+        pred = ESN.predict!(esn, warmup, steps) # |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+        _y = y[begin] #|> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+        Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
+    end
   end
   
-function test_all(esn, X, y, beta=20.0, reduction_factor=.5)
+function test_all(esn, X, y, beta=20.0, reduction_factor=.5; nrm=false)
     error = Inf
     while true
-    new_error = test!(esn, beta, X, y)
+    new_error = test!(esn, beta, X, y, nrm=nrm)
     if new_error > error || isinf(new_error)
         return (error, beta / reduction_factor)
     else
@@ -102,7 +122,7 @@ test_rates = parameter_samples[end] .* 1.02
 test_parameters = [1e-15, 0.5, 10, 1., 10., 1e2]
 pa = Parameters(test_parameters...)
 p = formulate_all(rfp, icfp, pa, tspan=tspan, rates=[(parameter_samples[end])...])
-@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-15, saveat=timepoints)
+@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-40, reltol=10e-10) #, saveat=timepoints)
 train_subset = vcat(sol.t', hcat(sol.u...)) .|> x -> log2.(x .+ abs(minimum(x))*1.01)
 
 
@@ -115,8 +135,8 @@ W_out_dims = size(esn.output_layer.weight)
 warmup_length = 10
 warmup = X[begin][:, begin:warmup_length]
 steps = size(y[begin], 2) - size(warmup, 2)
-ESN.train!(esn, X, y, beta)
-prediction2 = ESN.predict!(esn, warmup, steps)
+ESN.train!(esn, transform.(X, u0 = u0), transform.(y, u0=u0), beta)
+prediction2 = ESN.predict!(esn, transform(warmup, u0=u0), steps) |> x->transform_back(x, u0=u0)
 
 interp_rates = replace(log10.(p.rates .+ 1e-30), -Inf=>0.0)
 W_out_interpolated = reshape(weight_surrogate(interp_rates), W_out_dims)
@@ -126,21 +146,21 @@ prediction = ESN.predict!(esn, warmup, steps)
 
 for i in 1:Integer(round(size(X[begin], 1) / 25))+1
     if i*25 > size(X[begin], 1)
-      plot(sol.t[warmup_length+1:end],
+      plot(timepoints[warmup_length+1:end],
         y[begin][(i-1)*25+1:end, warmup_length:end]',
         xscale=:log10,
         label="GT", layout=25, legend=nothing, size=(1200,800))
-        plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:end, :]', xscale=:log10, layout=25)
-        plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:end, :]', xscale=:log10, layout=25)      
+        #plot!(timepoints[warmup_length+1:end], prediction[(i-1)*25+1:end, :]', xscale=:log10, layout=25)
+        plot!(timepoints[warmup_length+1:end], prediction2[(i-1)*25+1:end, :]', xscale=:log10, layout=25)      
     else
-        plot(sol.t[warmup_length+1:end],
+        plot(timepoints[warmup_length+1:end],
         y[begin][(i-1)*25+1:i*25, warmup_length:end]',
         xscale=:log10,
         label="GT", layout=25, legend=nothing, size=(1200,800))
-        plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:i*25, :]', xscale=:log10, layout=25)
+        #plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:i*25, :]', xscale=:log10, layout=25)
         plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=25)    
     end
-    savefig(projectdir("test_plots", "Fixed_interp_Normalized_Dark_Cloud_DESN_Interpolation_ESR_species_$i.png"))
+    savefig(projectdir("test_plots", "LogNorm_Normalized_Dark_Cloud_SplitESN_Interpolation_ESR_species_$i.png"))
   end
 
 # 6.692415508435203 -> 119
