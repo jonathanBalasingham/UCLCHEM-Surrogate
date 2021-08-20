@@ -77,3 +77,27 @@ function normalize_each_column(X::Matrix)
     # here I add a small buffer so I can take the log later on
     X |> x -> (eachcol(x .+ abs(minimum(x))*1.01) .|> x->(x./sum(x))) |> x->hcat(x...)
 end
+
+function filter_to_significant_concentration(X::Matrix, transform=:log10; indices_only=false)
+    if transform == :log10
+        threshold = log10(1e-30)
+    elseif transform == :log2
+        threshold = log2(1e-30)
+    end
+
+    if indices_only
+        any.(x->x>=threshold,eachrow(X))
+    else
+        X[any.(x->x>=threshold,eachrow(X)),:]
+    end
+end
+
+function sum_columns(X::Matrix, transform)
+    if transform == :log10
+        10 .^ X |> eachcol .|> sum
+    elseif transform == :log2
+        2 .^ X |> eachcol .|> sum
+    else
+        X |> eachcol .|> sum
+    end
+end

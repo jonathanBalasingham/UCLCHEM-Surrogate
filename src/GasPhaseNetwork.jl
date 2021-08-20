@@ -59,7 +59,7 @@ end
 
 function formulate_ode_system(rx_network)
     sys = convert(ODESystem, rx_network)
-    ODESystem(sys.eqs, (@parameters t)[1])
+    ODESystem(simplify(sys.eqs), (@parameters t)[1])
 end
 
 
