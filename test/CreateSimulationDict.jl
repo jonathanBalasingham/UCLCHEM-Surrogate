@@ -23,7 +23,7 @@ dark_cloud_lower = get_rates(rfp, Parameters(rates_set_lower_bound...))
 true_dark_cloud_lower = [min(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 true_dark_cloud_upper = [max(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 
-parameter_samples = sample(30, true_dark_cloud_lower, true_dark_cloud_upper, SobolSample())
+parameter_samples = sample(10, true_dark_cloud_lower .* 1.05, true_dark_cloud_upper .* .995, SobolSample());
 
 function condition(u, t, integrator)
     check_error(integrator) != :Success
@@ -36,11 +36,7 @@ end
 
 callback = ContinuousCallback(condition, affect!)
 
-pr = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=[parameter_samples[begin]...]);
-prob=ODEProblem(pr.network, pr.u0, pr.tspan)
-@time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-10, callback=callback)
-
-timepoints = sol.t
+timepoints = deserialize("./timepoints")
 bottom = filter(x->x>0,true_dark_cloud_lower) |> minimum |> log10 |> abs |> x->round(x)+1 
 r(x) = replace(log10.(x) .+ bottom, -Inf=>0.0)
 
@@ -73,7 +69,7 @@ parameter_samples[1:end] .|>
                 end
             end;
 
-
+serialize("./simulation_dict", simulation_dict)
 
 
 if exists("./simulation_dict")

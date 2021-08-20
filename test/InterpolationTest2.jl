@@ -56,7 +56,7 @@ function test!(esn, beta, X, y; nrm=false)
         warmup = X_t[begin][:, begin:warmup_length]
         steps = size(y[begin], 2) - size(warmup, 2)
         @time pred = ESN.predict!(esn, warmup, steps) # |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
-        pred = transform_back(pred, u0)
+        pred = transform_back(pred, u0=u0)
         _y = y[begin] #|> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
         Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
     else
@@ -64,7 +64,7 @@ function test!(esn, beta, X, y; nrm=false)
         warmup_length = 10
         warmup = X[begin][:, begin:warmup_length]
         steps = size(y[begin], 2) - size(warmup, 2)
-        pred = ESN.predict!(esn, warmup, steps) # |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
+        @time pred = ESN.predict!(esn, warmup, steps) # |> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
         _y = y[begin] #|> x->vcat(x, hcat(sum.(eachcol(2 .^ x[1:end, :]))...))
         Flux.Losses.mae(pred, _y[begin:end, warmup_length:end])
     end
@@ -100,10 +100,11 @@ for (rates, solution) in simulation_dict
     end
     X = [solution[:, begin:end-1]]
     y = [solution[:, begin+1:end]]
-    err, beta = test_all(esn, X, y)
+    u0 = get_u0(X[begin])
+    err, beta = test_all(esn, X, y, nrm=true)
     push!(errors, err)
     @info "Using beta: $beta with mae error: $err"
-    ESN.train!(esn, X, y, beta)
+    ESN.train!(esn, transform.(X, u0=u0), transform.(y, u0=u0), beta)
     flattened_W_out = reshape(esn.output_layer.weight, :, 1)
     desn_weight_dict[rates] = flattened_W_out
     @info "Weight dictionary has $(length(keys(desn_weight_dict))) entries"
