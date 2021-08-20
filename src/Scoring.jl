@@ -80,9 +80,9 @@ end
 
 function filter_to_significant_concentration(X::Matrix, transform=:log10; indices_only=false)
     if transform == :log10
-        threshold = log10(1e-30)
+        threshold = log10(1e-20)
     elseif transform == :log2
-        threshold = log2(1e-30)
+        threshold = log2(1e-20)
     end
 
     if indices_only
