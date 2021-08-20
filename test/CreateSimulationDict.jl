@@ -8,7 +8,7 @@ Random.seed!(0)
 
 include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "NetworkSurrogate.jl"]))
 
-rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_final.csv", "initcond0.csv", "species.csv"])
+rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
 
 include(srcdir("EchoStateNetwork.jl"))
 include(srcdir("Scoring.jl"))
@@ -23,7 +23,7 @@ dark_cloud_lower = get_rates(rfp, Parameters(rates_set_lower_bound...))
 true_dark_cloud_lower = [min(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 true_dark_cloud_upper = [max(a,b) for (a,b) in zip(dark_cloud_lower, dark_cloud_upper)]
 
-parameter_samples = sample(30, true_dark_cloud_lower, true_dark_cloud_upper, SobolSample())
+parameter_samples = sample(3, true_dark_cloud_lower, true_dark_cloud_upper, SobolSample())
 
 function condition(u, t, integrator)
     check_error(integrator) != :Success
@@ -36,11 +36,7 @@ end
 
 callback = ContinuousCallback(condition, affect!)
 
-pr = formulate_all(rfp, icfp, Parameters(zeros(6)...), tspan=tspan, rates=[parameter_samples[begin]...]);
-prob=ODEProblem(pr.network, pr.u0, pr.tspan)
-@time sol = solve(prob, CVODE_BDF(), abstol=10e-20, reltol=10e-10, callback=callback)
-
-timepoints = sol.t
+timepoints = deserialize("./timepoints")
 bottom = filter(x->x>0,true_dark_cloud_lower) |> minimum |> log10 |> abs |> x->round(x)+1 
 r(x) = replace(log10.(x) .+ bottom, -Inf=>0.0)
 
@@ -62,7 +58,7 @@ parameter_samples[1:end] .|>
                             return
                         end
                         prob=ODEProblem(x.network, x.u0, x.tspan)
-                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-15, callback=callback, saveat=timepoints)
+                        @time sol = solve(prob, CVODE_BDF(), abstol=10e-30, reltol=10e-10, callback=callback, saveat=timepoints)
                         if sol.t[end] >= tspan[2]*.999
                             train = hcat(sol.u...) |> x -> log2.(x .+ abs(minimum(x))*1.01)
                             simulation_dict[rates] = train
@@ -74,6 +70,4 @@ parameter_samples[1:end] .|>
             end;
 
 
-
-
-if exists("./simulation_dict")
+serialize("./simulation_dict", simulation_dict)
