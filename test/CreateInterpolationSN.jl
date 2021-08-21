@@ -1,14 +1,14 @@
 using DrWatson
 @quickactivate "UCLCHEM Surrogate"
 
-using DifferentialEquations, Sundials, Serialization, ReservoirComputing, Surrogates, Plots
+using DifferentialEquations, Sundials, Serialization, Surrogates, Plots
 
 using Random
 Random.seed!(0)
 
 include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"])) #, "NetworkSurrogate.jl"]))
 
-rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_final.csv", "initcond0.csv", "species.csv"])
+rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
 
 include(srcdir("EchoStateNetwork.jl"))
 include(srcdir("Scoring.jl"))
@@ -74,6 +74,7 @@ function test_all(esn, X, y, beta=20.0, reduction_factor=.5; nrm=false)
     error = Inf
     while true
     new_error = test!(esn, beta, X, y, nrm=nrm)
+    @info "error: $new_error"
     if new_error > error || isinf(new_error)
         return (error, beta / reduction_factor)
     else
@@ -95,7 +96,7 @@ r(x) = replace(log10.(x) .+ bottom, -Inf=>0.0)
 errors = Float64[]
 
 for (rates, solution) in simulation_dict
-    if rates in keys(desn_weight_dict)
+    if rates in keys(esn_weight_dict)
         continue
     end
     X = [solution[:, begin:end-1]]
@@ -106,31 +107,28 @@ for (rates, solution) in simulation_dict
     @info "Using beta: $beta with mae error: $err"
     ESN.train!(esn, transform.(X, u0=u0), transform.(y, u0=u0), beta)
     flattened_W_out = reshape(esn.output_layer.weight, :, 1)
-    desn_weight_dict[rates] = flattened_W_out
-    @info "Weight dictionary has $(length(keys(desn_weight_dict))) entries"
-    serialize("desn_weight_dict", desn_weight_dict)
+    esn_weight_dict[rates] = flattened_W_out
+    @info "Weight dictionary has $(length(keys(esn_weight_dict))) entries"
+    serialize("esn_weight_dict", esn_weight_dict)
 end
       
 
-x_rates = keys(d)
-lowerbound = hcat(x_rates...) |> eachrow .|> minimum
-upperbound = hcat(x_rates...) |> eachrow .|> maximum
-weight_surrogate = RadialBasis([keys(d)...], [values(d)...], 
+weight_surrogate = RadialBasis([keys(esn_weight_dict)...], [values(esn_weight_dict)...], 
                                 r(true_dark_cloud_lower), r(true_dark_cloud_upper))
 #weight_surrogate = RadialBasis([keys(d)...], [values(d)...], lowerbound, upperbound)
 
-test_rates = parameter_samples[end] .* 1.02
-test_parameters = [1e-15, 0.5, 10, 1., 10., 1e2]
+test_parameters = [1e-16, 0.5, 230, 1., 10., 1e3]
+test_rates = get_rates(rfp, Parameters(test_parameters...))
 pa = Parameters(test_parameters...)
-p = formulate_all(rfp, icfp, pa, tspan=tspan, rates=[(parameter_samples[end])...])
-@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-40, reltol=10e-10) #, saveat=timepoints)
+p = formulate_all(rfp, icfp, pa, tspan=tspan, rates=test_rates)
+@time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=10e-30, reltol=10e-10, saveat=timepoints)
 train_subset = vcat(sol.t', hcat(sol.u...)) .|> x -> log2.(x .+ abs(minimum(x))*1.01)
 
 
 X = [train_subset[2:end, begin:end-1]]
 y = [train_subset[2:end, begin+1:end]]
-
-err, beta = test_all(esn, X, y)
+u0 = get_u0(X[begin])
+err, beta = test_all(esn, X, y, 1e-1, nrm=true)
 W_out_dims = size(esn.output_layer.weight)
 
 warmup_length = 10
@@ -139,29 +137,29 @@ steps = size(y[begin], 2) - size(warmup, 2)
 ESN.train!(esn, transform.(X, u0 = u0), transform.(y, u0=u0), beta)
 prediction2 = ESN.predict!(esn, transform(warmup, u0=u0), steps) |> x->transform_back(x, u0=u0)
 
-interp_rates = replace(log10.(p.rates .+ 1e-30), -Inf=>0.0)
+interp_rates = r(p.rates)
 W_out_interpolated = reshape(weight_surrogate(interp_rates), W_out_dims)
 esn.output_layer.weight .= W_out_interpolated
 
-prediction = ESN.predict!(esn, warmup, steps)
+prediction = ESN.predict!(esn, transform(warmup, u0=u0), steps) |> x->transform_back(x, u0=u0)
 
 for i in 1:Integer(round(size(X[begin], 1) / 25))+1
     if i*25 > size(X[begin], 1)
       plot(timepoints[warmup_length+1:end],
         y[begin][(i-1)*25+1:end, warmup_length:end]',
         xscale=:log10,
-        label="GT", layout=25, legend=nothing, size=(1200,800))
-        #plot!(timepoints[warmup_length+1:end], prediction[(i-1)*25+1:end, :]', xscale=:log10, layout=25)
-        plot!(timepoints[warmup_length+1:end], prediction2[(i-1)*25+1:end, :]', xscale=:log10, layout=25)      
+        label="GT", layout=23, legend=nothing, size=(1200,800))
+        plot!(timepoints[warmup_length+1:end], prediction[(i-1)*25+1:end, :]', xscale=:log10, layout=23)
+        plot!(timepoints[warmup_length+1:end], prediction2[(i-1)*25+1:end, :]', xscale=:log10, layout=23)      
     else
         plot(timepoints[warmup_length+1:end],
         y[begin][(i-1)*25+1:i*25, warmup_length:end]',
         xscale=:log10,
         label="GT", layout=25, legend=nothing, size=(1200,800))
         #plot!(sol.t[warmup_length+1:end], prediction[(i-1)*25+1:i*25, :]', xscale=:log10, layout=25)
-        plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=25)    
+        plot!(sol.t[warmup_length+1:end], prediction2[(i-1)*25+1:i*25, :]', xscale=:log10, layout=23)    
     end
-    savefig(projectdir("test_plots", "LogNorm_Normalized_Dark_Cloud_SplitESN_Interpolation_ESR_species_$i.png"))
+    savefig(projectdir("test_plots", "PeakSN_Final_Dark_Cloud_ESN_Interpolation_ESR_species_$i.png"))
   end
 
 # 6.692415508435203 -> 119

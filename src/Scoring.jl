@@ -66,6 +66,12 @@ function retroactive_loss(prediction::Matrix, prob, solver; loss=Flux.Losses.mae
     loss(hcat(true_solution...), prediction[2:end, :]) / size(true_solution, 2)
 end
 
+function physical_error(truth::T, pred::T) where {T <: Matrix}
+    truth_sums = 2 .^ truth |> eachcol .|> sum
+    pred_sums = 2 .^ pred |> eachcol .|> sum
+    mean(pred_sums .- truth_sums[begin])
+end
+
 
 function normalize_each_column(X::Matrix)
     # here I add a small buffer so I can take the log later on
@@ -74,9 +80,9 @@ end
 
 function filter_to_significant_concentration(X::Matrix, transform=:log10; indices_only=false)
     if transform == :log10
-        threshold = log10(1e-30)
+        threshold = log10(1e-20)
     elseif transform == :log2
-        threshold = log2(1e-30)
+        threshold = log2(1e-20)
     end
 
     if indices_only
