@@ -1,3 +1,15 @@
+#=
+
+This is a very simple example of how to create 
+and predict using the ESNSurrogate Module. This
+example uses relatively few example from the 
+simplified network. I've noted in the README and 
+Main.jl a problem with solving a network repeatedly
+The small network has a higher limit for this. I've 
+gotten 300+ samples without issue, but I cannot 
+determine for certain when it will crash.
+
+=#
 using DrWatson
 @quickactivate "UCLCHEM Surrogate"
 
@@ -6,11 +18,8 @@ include(srcdir("ESNSurrogate.jl"))
 include(srcdir("Scoring.jl"))
 include(srcdir("Transform.jl"))
 
-
 using DifferentialEquations, Plots, Sundials, Surrogates, Serialization
-
 include.(srcdir.(["GasPhaseNetwork.jl", "CVODESolve.jl", "Visualize.jl"]))
-
 rfp, icfp, sfp = map(x -> datadir("exp_raw", x), ["reactions_small.csv", "initcond0.csv", "species.csv"])
 include(srcdir("Constants.jl"))
 
