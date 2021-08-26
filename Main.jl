@@ -28,6 +28,10 @@ desn_surrogate = EchoStateNetworkSurrogate.load_model(projectdir("models", "desn
 
 using Surrogates
 # Sample a single rate set for this demo
+# If you change the number of samples, the
+# resulting propogation plot will be different
+# since only the last sample of the batch is
+# taken.
 @info "Sampling Rates"
 sampled_rates = sample(10, true_dark_cloud_lower, true_dark_cloud_upper, SobolSample())[end];
 
