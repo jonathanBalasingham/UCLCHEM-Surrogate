@@ -1,9 +1,8 @@
 # UCLCHEM Surrogate
 
-This code base is using the Julia Language and [DrWatson](https://juliadynamics.github.io/DrWatson.jl/stable/)
+This code base requires that the Julia Language is Installed. Either 
+version 1.6.1 or 1.6.2. Please install it through 
 > UCLCHEM Surrogate
-
-It is authored by Jonathan Balasingham.
 
 To (locally) reproduce this project, do the following:
 
@@ -18,6 +17,19 @@ To (locally) reproduce this project, do the following:
    ```
 
 This will install all necessary packages for you to be able to run the scripts and
-everything should work out of the box.
+everything should work out of the box. 
+```
+.
+├── scripts                   # Examples of how to use ESNs, Surrogates and Chemical Networks along with scripts for plot creation
+├── images                    # Images I included in the Paper
+├── models                    # Binaries needed to run the code
+├── src                       # Source files, containing the implementation of the gas phase network, ESNs, and surrogate model
+├── output                    # output images from the code in scripts/
+├── Main.jl                   # Main Result producing script
+└── README.md
+```
+## Instructions
+1. Please unzip the binaries in the models/ folder. These contain the full network surrogate model. The simplified version was not included due to GitHub's 100MB file limit.
+2. 
 
 
