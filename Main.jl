@@ -94,7 +94,7 @@ savefig(output_path("KNN_vs_Adaptive.png"))
 # integration. I'm not sure where this bug stems from. If the same problem that throws and
 # error is run again in a fresh Julia session it will complete perfectly fine.
 zeta = 1e-14
-Ts = range(30, stop=300, length=4) |> collect
+Ts = range(10, stop=300, length=4) |> collect
 densities = range(1e2, stop=1e6, length=4) |> collect
 
 esn_mae_heatmap, esn_roc_heatmap, esn_pe_heatmap = create_heatmap(Ts, densities, zeta, esn_surrogate)
