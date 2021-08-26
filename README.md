@@ -27,7 +27,7 @@ everything should work out of the box.
 ├── models                    # Binaries needed to run the code
 ├── src                       # Source files, containing the implementation of the gas phase network, ESNs, and surrogate model
 ├── output                    # output images from the code in scripts/ and Main.jl
-├── Main.jl                   # Main Result producing script
+├── Main.jl                   # Surrogate Model individual test and heatmaps for the full network (the culmination of this work)
 └── README.md
 ```
 ## Instructions
