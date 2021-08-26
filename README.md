@@ -1,7 +1,7 @@
 # UCLCHEM Surrogate
 
 This code base requires that the Julia Language is Installed. Either 
-version 1.6.1 or 1.6.2. Please install it through https://julialang.org/ or through a local package manage such as `brew` or `apt`
+version 1.6.1 or 1.6.2. Please install it through https://julialang.org/. Package manager version have been shown to leave binaries behind need for various packages.
 > UCLCHEM Surrogate
 
 To (locally) reproduce this project, do the following:
@@ -33,7 +33,10 @@ everything should work out of the box.
 ## Instructions
 1. Please unzip the binaries in the models/ folder. These contain the full network surrogate model. The simplified version was not included due to GitHub's 100MB file limit.
 2. While in the root directory, simply run `julia Main.jl` to create the ESN and DESN Surrogate prediction for a random set of rates for the full network and to reproduce a reduced version of the heatmaps.
-3. To create the box and whisker plots, please run `julia scripts/<problem_name>.jl` **Please note, this can take a very long time to completely run. This is also using just a fraction of the samples of the plots in the paper so results will vary.**
+3. To create the box and whisker plots, please run `julia scripts/<problem_name>.jl` **Please note, this can take a very long time to completely run (hours). This is also using just a fraction of the samples of the plots in the paper so results will vary.**
 
 ## Notes
-The scripts directory provides minimalistic examples of how to use the chemical network, esn and surrogate should you need to. The other three scripts are dedicated entirely to producing the error plots from the paper.
+- All output is already located in the `output/` folder, so it is not required to run everything.
+- The scripts directory provides minimalistic examples of how to use the chemical network, esn and surrogate should you need to. The other three scripts are dedicated entirely to producing the error plots from the paper.
+- The heatmaps use a fraction of the samples and produce higher error than in the paper. After investigating this I determined it was due to the proximity of the rates to the interpolation samples. They are not the same, but are goemetrically close. I've made note of this in the paper.
+- In `Main.jl` the heatmap portion has a parameter to change the number of samples of temperature or density. If the number of samples exceeds ~25, the program will crash. This is a bug in some part of the solver. I have confirmed that the problem that causes the exception to be thrown is not unsolvable; a fresh Julia session will allow the problem to be solve, but this means we cannot accumulate samples without writing to disk.  
