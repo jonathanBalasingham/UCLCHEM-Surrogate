@@ -3,9 +3,21 @@ using Catalyst, DataFrames, CSV
 
 include("Reaction.jl")
 include("Rates.jl")
-include("InitialNetworkConditions.jl")
-include("ChemicalNetwork.jl")
 
+struct ChemicalNetworkProblem
+    network::ODESystem
+    species::Vector{String}
+    u0::Vector{Float64}
+    tspan::Tuple{Float64, Float64}
+    rates::Vector
+end
+
+struct ChemicalNetworkSolution
+    t
+    u::Array{Vector{Float64},1}
+    species::Vector{String}
+    rates::Vector
+end
 
 function read_in_reactions(reaction_file::String)
     d = CSV.read(reaction_file, DataFrame)
@@ -36,7 +48,7 @@ function create_gas_phase_network(reactions::DataFrame; species=nothing)
 
     network = make_empty_network()
     rates = reactions[!, end]
-    #@parameters t rates[1: length(rates)]
+
     addparam!(network, (@parameters t)[1])
     make_variable = x -> (@variables $x(t))[1]
 
@@ -101,10 +113,23 @@ function create_u0(network::ReactionSystem, initial_conditions::Dict; default_va
     u0
 end
 
-function formulate_all(rfp::String, icfp::String, p; tspan=(0., 3600. *24. *365. * 10^7), rates=nothing)
+function formulate_all(rfp::String, icfp::String, p::Parameters; tspan=(0., 3600. *24. *365. * 10^7))
     ics = read_in_initial_conditions(icfp)
     reactions_data = read_in_reactions(rfp)
-    calculateRates!(reactions_data, p, rates=rates)
+    calculateRates!(reactions_data, p, rates=nothing)
+    network = create_gas_phase_network(reactions_data)
+    rates = reactions_data[!, end]
+    sys = formulate_ode_system(network)
+    species_name = get_species_names(network)
+    u0 = create_u0(network, ics)
+    cnp = ChemicalNetworkProblem(sys, species_name, u0, tspan, rates)
+    return cnp
+end
+
+function formulate_all(rfp::String, icfp::String, rates::Vector; tspan=(0., 3600. *24. *365. * 10^7))
+    ics = read_in_initial_conditions(icfp)
+    reactions_data = read_in_reactions(rfp)
+    calculateRates!(reactions_data, Parameters(zeros(6)...), rates=rates)
     network = create_gas_phase_network(reactions_data)
     rates = reactions_data[!, end]
     sys = formulate_ode_system(network)
@@ -119,4 +144,15 @@ function get_rates(rfp::AbstractString, p)
     calculateRates!(reactions_data, p)
     rates = reactions_data[!, end]
     rates
+end
+
+
+function direct_solve(rfp::String, icfp::String, rates, timepoints=nothing; tspan=(0., 3600. *24. *365. * 10^7), abstol=1e-25, reltol=1e-7)
+    p = formulate_all(rfp, icfp, rates, tspan=tspan)
+    if isnothing(timepoints)
+        @time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=abstol, reltol=reltol)
+    else
+        @time sol = solve(ODEProblem(p.network, p.u0, p.tspan), CVODE_BDF(), abstol=abstol, reltol=reltol, saveat=timepoints)
+    end
+    train_subset = vcat(sol.t', hcat(sol.u...) .|> x -> log2.(x .+ abs(minimum(x))*1.01))
 end

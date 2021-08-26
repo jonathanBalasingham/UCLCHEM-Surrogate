@@ -268,8 +268,8 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Array{T, 3}, y::Array{T,
     end
 end
 
-function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01; 
-                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y), use_gpu=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function train!(esn::AbstractEchoStateNetwork, X::Vector{Matrix{T}}, y::Vector{Matrix{T}}, β=0.01; 
+                opt=ADAM(0.1), epochs=10, loss=(x,y) -> Flux.Losses.mse(esn.output_layer(x), y), use_gpu=true) where {T<:AbstractFloat}
     length(X) == length(y) || @error "X and y do not have the same size of series: $((length(X), length(y)))"
     for i in 1:length(X)
         x_size = size(X[i])
@@ -304,12 +304,12 @@ function train!(esn::AbstractEchoStateNetwork{T, R}, X::Vector{Matrix{T}}, y::Ve
 end
 
 
-function predict!(esn::AbstractEchoStateNetwork{T, R}, input::Matrix{T}; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function predict!(esn::AbstractEchoStateNetwork, input::Matrix{T}; clear_state=true) where {T<:AbstractFloat}
     if clear_state ESN.reset!(esn) end
     hcat([esn(d) for d in eachcol(input)]...)
 end
 
-function predict!(esn::AbstractEchoStateNetwork{T, R}, warmup::Matrix{T}, steps::Integer; clear_state=true) where {T<:AbstractFloat, R<:AbstractReservoir{T}}
+function predict!(esn::AbstractEchoStateNetwork, warmup::Matrix{T}, steps::Integer; clear_state=true) where {T<:AbstractFloat}
     prediction = ESN.predict!(esn, warmup)[:, end] # warmup the reservoir
     for i in 1:steps
         prediction = hcat(prediction, esn(prediction[:, end]))

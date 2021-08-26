@@ -92,12 +92,12 @@ function filter_to_significant_concentration(X::Matrix, transform=:log10; indice
     end
 end
 
-function sum_columns(X::Matrix, transform)
+function sum_columns(X::Matrix, transform, normalize=true)
     if transform == :log10
-        10 .^ X |> eachcol .|> sum
+        (normalize ? normalize_each_column(10 .^ X ) : 10 .^ X) |> eachcol .|> sum
     elseif transform == :log2
-        2 .^ X |> eachcol .|> sum
+        (normalize ? normalize_each_column(2 .^ X) : 2 .^ X) |> eachcol .|> sum
     else
-        X |> eachcol .|> sum
+        (normalize ? normalize_each_column(X) : X) |> eachcol .|> sum
     end
 end

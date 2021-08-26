@@ -1,10 +1,16 @@
 using Sundials
 using DifferentialEquations
 using DelimitedFiles
-using ProgressMeter
 using DiffEqCallbacks
 import DifferentialEquations: solve
 
+"""
+Solver a ChemicalNetworkProblem by breaking it into chunks.
+Time span of each problem is controlled by `time_factor` 
+and `time_factor_post_1000_years`. 
+
+Adaptively solves the problem and returns a ChemicalNetworkSolution
+"""
 function solve(prob::ChemicalNetworkProblem; 
                 abstol::Float64=10^-20, 
                 reltol=10^-6, 
@@ -18,7 +24,6 @@ function solve(prob::ChemicalNetworkProblem;
     year_1000 = 1000. * 3600. * 24. * 365.
     current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
 
-    @async p = ProgressThresh(prob.tspan[2], 0)
 
     while current_time <= prob.tspan[2]
         sol = DifferentialEquations.solve(current_problem, solver(), maxiter=maxiter, reltol=reltol, abstol=abstol, cb=CallbackSet(PositiveDomain(abstol=1e-200)))
@@ -36,6 +41,13 @@ function solve(prob::ChemicalNetworkProblem;
     ChemicalNetworkSolution(t,u, prob.species, prob.rates)
 end
 
+
+"""
+Solves a ChemicalNetworkProblem at pre-determined
+time steps dictated by `saveat`
+
+Returns a ChemicalNetworkSolution
+"""
 function solve(prob::ChemicalNetworkProblem,
                 saveat::Array; 
                 abstol::Float64=10^-30, 
@@ -50,7 +62,6 @@ function solve(prob::ChemicalNetworkProblem,
     year_1000 = 1000. * 3600. * 24. * 365.
     current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
 
-    @async p = ProgressThresh(prob.tspan[2], 0)
     sub_saveat = filter(x -> x < target_time && x > current_time, saveat)
     while current_time <= prob.tspan[2]
         sol = DifferentialEquations.solve(current_problem, 
@@ -75,6 +86,13 @@ function solve(prob::ChemicalNetworkProblem,
     ChemicalNetworkSolution(t,u, prob.species, prob.rates)
 end
 
+
+"""
+Solves a ChemicalNetworkProblem at adaptive time
+points and writes solution to a CSV file.
+
+nothing returned
+"""
 function solve(prob::ChemicalNetworkProblem,
                filepath::AbstractString; 
                abstol::Float64=10^-20, 
@@ -135,8 +153,6 @@ function solve(prob::ChemicalNetworkProblem, saveat::Real;
     t = Float64[]
     year_1000 = 1000. * 3600. * 24. * 365.
     current_problem = ODEProblem{true}(prob.network, prob.u0, (current_time, target_time), prob.rates)
-
-    @async p = ProgressThresh(prob.tspan[2], 0)
 
     while current_time <= prob.tspan[2]
         sol = DifferentialEquations.solve(current_problem, solver(),saveat=saveat, maxiter=maxiter, reltol=reltol, abstol=abstol, cb=CallbackSet(PositiveDomain(abstol=1e-200)))
