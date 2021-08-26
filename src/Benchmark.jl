@@ -50,13 +50,13 @@ violin!(t_max.times .* 1e-9, label = "Max Tolerance", legend=:outertopright)
 
 ylabel!("Time / seconds")
 title!("CVODE BDF")
-savefig(projectdir("images", "CVODE_benchmark.png"))
+savefig(projectdir("output", "CVODE_benchmark.png"))
 
 using Serialization
-esn = deserialize(projectdir("bin", "esn"))
-desn = deserialize(projectdir("bin", "desn"))
+esn = deserialize(projectdir("models", "esn"))
+desn = deserialize(projectdir("models", "desn"))
 
-
+# ESN
 bm = @benchmarkable ESN.predict!(esn, data[:, 1:10], size(data, 2)-10) setup=(data = $(rand(ESN.inputdim(esn), 250))) evals=100 seconds=60 samples=100
 d_250_esn = run(bm)
 
@@ -80,9 +80,11 @@ ylabel!("Time / seconds")
 xlabel!("Steps")
 xticks!([1,2,3,4,5], ["250", "500", "1000", "2500", "10000"])
 title!("CTESN")
-"""
-Deep CTESN
-"""
+savefig(projectdir("output", "CTESN_benchmark.png"))
+
+
+# Deep CTESN
+
 bm = @benchmarkable ESN.predict!(desn, data[:, 1:10], size(data, 2)-10) setup=(data = $(rand(ESN.inputdim(esn), 250))) evals=5 seconds=60 samples=100
 d_250_desn = run(bm)
 violin(d_250_desn.times .* 1e-9, label = "250 Steps", legend=:outertopright)
@@ -103,3 +105,4 @@ bm = @benchmarkable ESN.predict!(desn, data[:, 1:10], size(data, 2)-10) setup=(d
 d_10000_desn = run(bm)
 violin!(d_10000_desn.times .* 1e-9, label = "10000 Steps", legend=:outertopright)
 ylabel!("Time / seconds")
+savefig(projectdir("output", "DeepCTESN_benchmark.png"))
