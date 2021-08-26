@@ -32,7 +32,7 @@ everything should work out of the box.
 ```
 ## Instructions
 1. Please unzip the binaries in the models/ folder. These contain the full network surrogate model. The simplified version was not included due to GitHub's 100MB file limit.
-2. While in the root directory, simply run `julia Main.jl` to create the ESN and DESN Surrogate prediction for a random set of rates for the full network and to reproduce a reduced version of the heatmaps.
+2. While in the root directory, simply run `julia Main.jl` to create the ESN and DESN Surrogate prediction for a random set of rates for the full network and to reproduce a reduced version of the heatmaps. If still in the REPL then run `include(projectdir("Main.jl"))`
 3. To create the box and whisker plots, please run `julia scripts/<problem_name>.jl` **Please note, this can take a very long time to completely run (hours). This is also using just a fraction of the samples of the plots in the paper so results will vary.**
 
 ## Notes
